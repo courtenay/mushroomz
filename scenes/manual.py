@@ -31,19 +31,19 @@ class ManualScene(Scene):
     def update(self, mushroom: Mushroom, dt: float) -> None:
         # Left stick controls hue and saturation
         # X axis: hue rotation
-        self._hue = (self._hue + self._left_x * dt * 180) % 360
+        self._hue = (self._hue + self._left_x * dt * 360) % 360
 
         # Y axis: saturation (up = more saturated)
-        sat_change = -self._left_y * dt * 0.5
+        sat_change = -self._left_y * dt * 1.5
         self._saturation = max(0, min(1, self._saturation + sat_change))
 
         # Right stick Y controls brightness
-        bright_change = -self._right_y * dt * 0.5
+        bright_change = -self._right_y * dt * 1.5
         self._brightness = max(0.1, min(1, self._brightness + bright_change))
 
         color = Color.from_hsv(self._hue, self._saturation, self._brightness)
         mushroom.set_target(color)
-        mushroom.update(dt, smoothing=0.2)
+        mushroom.update(dt, smoothing=0.5)
 
     def handle_event(self, event: Event, mushroom: Mushroom) -> None:
         if event.type == EventType.CONTROLLER_AXIS:

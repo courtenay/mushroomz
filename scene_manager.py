@@ -57,12 +57,16 @@ class SceneManager:
             x, y = data["dpad"]
             if y == 1:  # Up - select all
                 self._selected = set(m.id for m in self.mushrooms)
+                print("Selected: All mushrooms")
             elif y == -1:  # Down - mushroom 2
                 self._selected = {1}
+                print("Selected: Mushroom 2")
             elif x == -1:  # Left - mushroom 1
                 self._selected = {0}
+                print("Selected: Mushroom 1")
             elif x == 1:  # Right - mushroom 3
                 self._selected = {2}
+                print("Selected: Mushroom 3")
             return
 
         button = data.get("button")

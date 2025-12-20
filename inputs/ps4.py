@@ -23,6 +23,11 @@ class PS4Button(IntEnum):
     R3 = 11        # Right stick click
     PS = 12
     TOUCHPAD = 13
+    # D-pad as buttons (macOS)
+    DPAD_UP = 11
+    DPAD_DOWN = 12
+    DPAD_LEFT = 13
+    DPAD_RIGHT = 14
 
 
 class PS4Axis(IntEnum):
@@ -92,26 +97,44 @@ class PS4Controller:
             for event in pygame.event.get():
                 if event.type == pygame.JOYBUTTONDOWN:
                     self._button_state[event.button] = True
-                    await self.event_bus.publish(
-                        Event(
-                            type=EventType.CONTROLLER_BUTTON,
-                            data={
-                                "button": event.button,
-                                "pressed": True,
-                            }
+                    # Convert D-pad buttons to dpad events (macOS)
+                    dpad_map = {
+                        PS4Button.DPAD_UP: (0, 1),
+                        PS4Button.DPAD_DOWN: (0, -1),
+                        PS4Button.DPAD_LEFT: (-1, 0),
+                        PS4Button.DPAD_RIGHT: (1, 0),
+                    }
+                    if event.button in dpad_map:
+                        await self.event_bus.publish(
+                            Event(
+                                type=EventType.CONTROLLER_BUTTON,
+                                data={"dpad": dpad_map[event.button]}
+                            )
                         )
-                    )
+                    else:
+                        await self.event_bus.publish(
+                            Event(
+                                type=EventType.CONTROLLER_BUTTON,
+                                data={
+                                    "button": event.button,
+                                    "pressed": True,
+                                }
+                            )
+                        )
                 elif event.type == pygame.JOYBUTTONUP:
                     self._button_state[event.button] = False
-                    await self.event_bus.publish(
-                        Event(
-                            type=EventType.CONTROLLER_BUTTON,
-                            data={
-                                "button": event.button,
-                                "pressed": False,
-                            }
+                    # Skip D-pad buttons (handled separately)
+                    if event.button not in (PS4Button.DPAD_UP, PS4Button.DPAD_DOWN,
+                                            PS4Button.DPAD_LEFT, PS4Button.DPAD_RIGHT):
+                        await self.event_bus.publish(
+                            Event(
+                                type=EventType.CONTROLLER_BUTTON,
+                                data={
+                                    "button": event.button,
+                                    "pressed": False,
+                                }
+                            )
                         )
-                    )
                 elif event.type == pygame.JOYAXISMOTION:
                     value = self._apply_deadzone(event.value)
                     if self._axis_state.get(event.axis) != value:
@@ -137,7 +160,7 @@ class PS4Controller:
                     )
 
             # Small delay to prevent busy-waiting
-            await asyncio.sleep(0.016)  # ~60 Hz
+            await asyncio.sleep(0.008)  # ~120 Hz for responsive sticks
 
     def stop(self) -> None:
         """Stop the controller handler."""
