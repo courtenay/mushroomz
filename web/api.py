@@ -375,3 +375,38 @@ async def flash_all_mushroom_fixtures(request: Request, mushroom_id: int) -> dic
         controller.add_flash(fixture.address, fixture.channels, [255, 255, 255], 1.0)
 
     return {"status": "flashing", "mushroom": mushroom_config.name, "fixtures": len(mushroom_config.fixtures)}
+
+
+# === Live Visualizer Endpoints ===
+
+@router.get("/live")
+async def get_live_state(request: Request) -> dict[str, Any]:
+    """Get live state of all mushrooms and fixtures for visualization."""
+    controller = get_controller(request)
+    sm = controller.scene_manager
+
+    mushrooms_data = []
+    for mushroom in controller.mushrooms:
+        scene = sm._scenes.get(mushroom.id)
+        fixtures_data = []
+        for fixture in mushroom.fixtures:
+            color = fixture.color
+            fixtures_data.append({
+                "name": fixture.name,
+                "address": fixture.address,
+                "r": color.r,
+                "g": color.g,
+                "b": color.b,
+                "intensity": fixture.intensity,
+            })
+        mushrooms_data.append({
+            "id": mushroom.id,
+            "name": mushroom.name,
+            "scene": scene.name if scene else "Unknown",
+            "fixtures": fixtures_data,
+        })
+
+    return {
+        "blackout": sm._blackout,
+        "mushrooms": mushrooms_data,
+    }

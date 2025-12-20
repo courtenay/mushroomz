@@ -13,6 +13,12 @@
             50% { opacity: 0.5; }
         }
         .flashing { animation: flash-pulse 0.3s ease-in-out infinite; }
+        .fixture-light {
+            transition: background-color 0.05s ease-out, box-shadow 0.05s ease-out;
+        }
+        .mushroom-visual {
+            background: radial-gradient(ellipse at 50% 30%, rgba(60,60,60,0.8) 0%, rgba(30,30,30,0.9) 100%);
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
@@ -190,32 +196,67 @@
 
         <!-- Dashboard Tab -->
         <div x-show="currentTab === 'Dashboard' && selectedMushroom === null" x-cloak>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <template x-for="mushroom in mushrooms" :key="mushroom.id">
-                    <div class="bg-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-750 transition-colors"
+            <!-- Live Visualizer -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <template x-for="mushroom in liveState.mushrooms" :key="mushroom.id">
+                    <div class="mushroom-visual rounded-2xl p-5 cursor-pointer hover:ring-2 hover:ring-purple-500 transition-all"
                         @click="selectedMushroom = mushroom.id">
-                        <div class="flex items-center justify-between mb-3">
+                        <!-- Mushroom name and scene -->
+                        <div class="flex items-center justify-between mb-4">
                             <h3 class="font-semibold text-lg" x-text="mushroom.name"></h3>
                             <span class="text-xs px-2 py-1 rounded-full"
                                 :class="getSceneColor(mushroom.scene)"
                                 x-text="mushroom.scene">
                             </span>
                         </div>
-                        <div class="text-sm text-gray-400 mb-3">
-                            <span x-text="mushroom.fixtures.length"></span> fixtures
+
+                        <!-- Fixture visualizer -->
+                        <div class="flex flex-wrap justify-center gap-3 mb-4 min-h-[80px] items-center">
+                            <template x-for="(fixture, fIdx) in mushroom.fixtures" :key="fIdx">
+                                <div class="text-center">
+                                    <div class="fixture-light w-14 h-14 rounded-full border-2 border-gray-600 mx-auto"
+                                        :style="`background-color: rgb(${fixture.r}, ${fixture.g}, ${fixture.b}); box-shadow: 0 0 ${Math.max(fixture.r, fixture.g, fixture.b) / 8}px ${Math.max(fixture.r, fixture.g, fixture.b) / 4}px rgb(${fixture.r}, ${fixture.g}, ${fixture.b})`"
+                                        :title="fixture.name + ' (DMX ' + fixture.address + ')'">
+                                    </div>
+                                    <div class="text-xs text-gray-500 mt-1 truncate max-w-[60px]" x-text="fixture.name.split(' ').pop()"></div>
+                                </div>
+                            </template>
+                            <template x-if="mushroom.fixtures.length === 0">
+                                <div class="text-gray-500 text-sm">No fixtures</div>
+                            </template>
                         </div>
+
+                        <!-- Scene buttons -->
                         <div class="grid grid-cols-2 gap-2" @click.stop>
                             <template x-for="scene in scenes" :key="scene.id">
                                 <button @click="setScene(mushroom.id, scene.id)"
-                                    :class="mushroom.scene === scene.name ? 'bg-purple-600' : 'bg-gray-700 hover:bg-gray-600'"
+                                    :class="mushroom.scene === scene.name ? 'bg-purple-600' : 'bg-gray-700/50 hover:bg-gray-600'"
                                     class="text-xs py-2 px-2 rounded transition-colors"
                                     x-text="scene.name">
                                 </button>
                             </template>
                         </div>
-                        <div class="mt-3 text-xs text-purple-400">Click to configure &rarr;</div>
+                        <div class="mt-3 text-xs text-purple-400 text-center">Click to configure &rarr;</div>
                     </div>
                 </template>
+            </div>
+
+            <!-- Quick stats -->
+            <div class="bg-gray-800 rounded-lg p-4 flex items-center justify-between">
+                <div class="flex gap-6">
+                    <div>
+                        <span class="text-gray-400 text-sm">Mushrooms:</span>
+                        <span class="ml-2 font-semibold" x-text="liveState.mushrooms.length"></span>
+                    </div>
+                    <div>
+                        <span class="text-gray-400 text-sm">Total Fixtures:</span>
+                        <span class="ml-2 font-semibold" x-text="liveState.mushrooms.reduce((sum, m) => sum + m.fixtures.length, 0)"></span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full" :class="liveState.blackout ? 'bg-red-500' : 'bg-green-500'"></span>
+                    <span class="text-sm" x-text="liveState.blackout ? 'Blackout' : 'Live'"></span>
+                </div>
             </div>
         </div>
 
@@ -400,10 +441,15 @@
                 flashingFixtures: {},
                 discoveryAddress: 1,
                 discoveryChannels: 3,
+                liveState: { blackout: false, mushrooms: [] },
+                liveInterval: null,
 
                 async init() {
                     await this.loadData();
+                    await this.refreshLive();
                     setInterval(() => this.refreshStatus(), 2000);
+                    // Fast polling for live visualizer (10 FPS)
+                    this.liveInterval = setInterval(() => this.refreshLive(), 100);
                 },
 
                 async loadData() {
@@ -437,6 +483,13 @@
                         for (let m of this.mushrooms) {
                             m.scene = this.status.mushroom_scenes[m.id] || 'Unknown';
                         }
+                    } catch (e) {}
+                },
+
+                async refreshLive() {
+                    try {
+                        const res = await fetch('/api/live');
+                        this.liveState = await res.json();
                     } catch (e) {}
                 },
 
