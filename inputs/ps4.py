@@ -82,10 +82,14 @@ class PS4Controller:
             return False
 
         import pygame
-        pygame.joystick.quit()
-        pygame.joystick.init()
 
-        if pygame.joystick.get_count() == 0:
+        # Re-scan for joysticks (pygame 2.x supports this without quit/init)
+        try:
+            count = pygame.joystick.get_count()
+        except pygame.error:
+            return False
+
+        if count == 0:
             return False
 
         try:
@@ -97,27 +101,6 @@ class PS4Controller:
         except pygame.error as e:
             print(f"Failed to initialize controller: {e}")
             return False
-
-    def _check_disconnected(self) -> bool:
-        """Check if the controller was disconnected. Returns True if disconnected."""
-        if not self._connected or self._joystick is None:
-            return True
-
-        import pygame
-        try:
-            # Attempt to read - will fail if disconnected
-            pygame.joystick.quit()
-            pygame.joystick.init()
-            if pygame.joystick.get_count() == 0:
-                self._handle_disconnect()
-                return True
-            # Re-init the joystick after the check
-            self._joystick = pygame.joystick.Joystick(0)
-            self._joystick.init()
-            return False
-        except pygame.error:
-            self._handle_disconnect()
-            return True
 
     def _handle_disconnect(self) -> None:
         """Handle controller disconnection."""
@@ -145,7 +128,6 @@ class PS4Controller:
 
         self._running = True
         last_connect_check = 0.0
-        disconnect_check_counter = 0
 
         while self._running:
             # If not connected, poll for new controller
@@ -165,22 +147,22 @@ class PS4Controller:
                 await asyncio.sleep(0.1)  # Slower polling when disconnected
                 continue
 
-            # Periodically check for disconnection (every ~1 second)
-            disconnect_check_counter += 1
-            if disconnect_check_counter >= 120:  # 120 * 8ms = ~1 second
-                disconnect_check_counter = 0
-                if self._check_disconnected():
-                    await self.event_bus.publish(
-                        Event(
-                            type=EventType.CONTROLLER_BUTTON,
-                            data={"connected": False}
-                        )
-                    )
-                    continue
-
             # Process pygame events
             try:
-                for event in pygame.event.get():
+                events = pygame.event.get()
+            except (pygame.error, KeyError):
+                # Controller disconnected during event fetch
+                self._handle_disconnect()
+                await self.event_bus.publish(
+                    Event(
+                        type=EventType.CONTROLLER_BUTTON,
+                        data={"connected": False}
+                    )
+                )
+                continue
+
+            try:
+                for event in events:
                     if event.type == pygame.JOYBUTTONDOWN:
                         self._button_state[event.button] = True
                         # Convert D-pad buttons to dpad events (macOS)
@@ -263,7 +245,7 @@ class PS4Controller:
                                     data={"connected": True}
                                 )
                             )
-            except pygame.error:
+            except (pygame.error, KeyError, OSError):
                 # Controller likely disconnected mid-read
                 self._handle_disconnect()
                 await self.event_bus.publish(

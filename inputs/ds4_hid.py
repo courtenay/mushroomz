@@ -37,6 +37,7 @@ class DS4HIDController:
         self.event_bus = event_bus
         self._device: Any = None
         self._running = False
+        self._was_used = False  # Track if we successfully used HID
 
         # State tracking
         self._button_state: dict[int, bool] = {}
@@ -166,9 +167,9 @@ class DS4HIDController:
         """Run the HID input loop."""
         self._device = self._find_device()
         if not self._device:
-            print("No DS4 controller found via HID. Falling back to pygame.")
             return
 
+        self._was_used = True
         self._running = True
         while self._running:
             try:
