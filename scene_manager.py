@@ -43,6 +43,7 @@ class SceneManager:
         # Subscribe to events
         event_bus.subscribe(EventType.CONTROLLER_BUTTON, self._handle_button)
         event_bus.subscribe(EventType.CONTROLLER_AXIS, self._handle_axis)
+        event_bus.subscribe(EventType.CONTROLLER_GYRO, self._handle_gyro)
         event_bus.subscribe(EventType.OSC_AUDIO_BEAT, self._handle_audio)
         event_bus.subscribe(EventType.OSC_AUDIO_LEVEL, self._handle_audio)
         event_bus.subscribe(EventType.OSC_BIO, self._handle_bio)
@@ -113,6 +114,14 @@ class SceneManager:
 
     def _handle_axis(self, event: Event) -> None:
         """Forward axis events to active scenes."""
+        for mushroom in self.mushrooms:
+            if mushroom.id in self._selected:
+                scene = self._scenes.get(mushroom.id)
+                if scene:
+                    scene.handle_event(event, mushroom)
+
+    def _handle_gyro(self, event: Event) -> None:
+        """Forward gyro events to active scenes."""
         for mushroom in self.mushrooms:
             if mushroom.id in self._selected:
                 scene = self._scenes.get(mushroom.id)

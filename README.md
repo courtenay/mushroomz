@@ -2,6 +2,8 @@
 
 A Python-based reactive lighting system for giant mushrooms (or any DMX fixtures). Controls RGB PAR lights via Art-Net, with inputs from PS4 controller, audio-reactive OSC, and plant bio-resistance sensors.
 
+Load the website on localhost:8005
+
 Tip: you can run the audio-to-OSC app separately anywhere on your network. 
   % source venv/bin/activate
   % python audio_to_osc.py --osc-port 8000

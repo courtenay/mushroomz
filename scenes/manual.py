@@ -9,6 +9,10 @@ from fixtures.rgb_par import Color
 from events import Event, EventType
 from inputs.ps4 import PS4Axis
 
+# Gyro sensitivity multipliers
+GYRO_HUE_SENSITIVITY = 200.0  # degrees per second per unit gyro
+GYRO_SAT_SENSITIVITY = 0.5    # saturation change per second per unit gyro
+
 # Shared flag to suppress other displays when manual is active
 _manual_active = False
 
@@ -33,6 +37,11 @@ class ManualScene(Scene):
         self._left_y = 0.0
         self._right_x = 0.0
         self._right_y = 0.0
+
+        # Gyro states
+        self._gyro_x = 0.0  # Roll - mapped to hue
+        self._gyro_y = 0.0  # Pitch - mapped to saturation
+        self._gyro_z = 0.0  # Yaw
 
         # Display rate limiting
         self._last_display = 0.0
@@ -98,6 +107,12 @@ class ManualScene(Scene):
         bright_change = -self._right_y * dt * 1.5
         self._brightness = max(0.1, min(1, self._brightness + bright_change))
 
+        # Gyro adds to hue and saturation control
+        # Roll (X) rotates hue, Pitch (Y) adjusts saturation
+        self._hue = (self._hue + self._gyro_z * dt * GYRO_HUE_SENSITIVITY) % 360
+        sat_gyro = -self._gyro_x * dt * GYRO_SAT_SENSITIVITY
+        self._saturation = max(0, min(1, self._saturation + sat_gyro))
+
         color = Color.from_hsv(self._hue, self._saturation, self._brightness)
         mushroom.set_target(color)
         mushroom.update(dt, smoothing=0.5)
@@ -117,3 +132,8 @@ class ManualScene(Scene):
                 self._right_x = value
             elif axis == PS4Axis.RIGHT_Y:
                 self._right_y = value
+
+        elif event.type == EventType.CONTROLLER_GYRO:
+            self._gyro_x = event.data.get("x", 0.0)
+            self._gyro_y = event.data.get("y", 0.0)
+            self._gyro_z = event.data.get("z", 0.0)

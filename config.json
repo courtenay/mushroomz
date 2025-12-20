@@ -13,6 +13,11 @@
           "name": "M1 Cap",
           "address": 1,
           "channels": 3
+        },
+        {
+          "name": "Fixture 2",
+          "address": 4,
+          "channels": 3
         }
       ]
     },

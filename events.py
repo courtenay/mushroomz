@@ -11,6 +11,8 @@ class EventType(Enum):
     # Controller events
     CONTROLLER_BUTTON = auto()
     CONTROLLER_AXIS = auto()
+    CONTROLLER_GYRO = auto()  # Gyroscope data (pitch, yaw, roll rates)
+    CONTROLLER_ACCEL = auto()  # Accelerometer data (x, y, z)
 
     # OSC events
     OSC_AUDIO_BEAT = auto()

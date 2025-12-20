@@ -10,6 +10,7 @@ from config_manager import ConfigManager
 from events import EventBus, EventType
 from fixtures.mushroom import Mushroom
 from inputs.ps4 import PS4Controller
+from inputs.ds4_hid import DS4HIDController
 from inputs.osc_server import OSCServer
 from inputs.idle import IdleHandler
 from output.artnet import ArtNetOutput
@@ -38,6 +39,8 @@ class LightingController:
             ip=self.config.artnet_ip,
             universe=self.config.artnet_universe
         )
+        # Try DS4 HID first (has gyro support), fall back to pygame
+        self.ds4_hid = DS4HIDController(self.event_bus)
         self.ps4 = PS4Controller(self.event_bus)
         self.osc = OSCServer(self.event_bus, self.config.osc_port)
         self.idle = IdleHandler(self.event_bus, self.config.idle_timeout)
@@ -48,6 +51,8 @@ class LightingController:
         for event_type in [
             EventType.CONTROLLER_BUTTON,
             EventType.CONTROLLER_AXIS,
+            EventType.CONTROLLER_GYRO,
+            EventType.CONTROLLER_ACCEL,
             EventType.OSC_AUDIO_BEAT,
             EventType.OSC_AUDIO_LEVEL,
             EventType.OSC_BIO,
@@ -147,6 +152,7 @@ class LightingController:
         print("  Options: Blackout toggle")
         print("  Left stick: Hue/Saturation (manual mode)")
         print("  Right stick: Brightness")
+        print("  Gyro tilt: Hue control (manual mode)")
         print("=" * 50)
 
         self._running = True
@@ -160,6 +166,7 @@ class LightingController:
         # Create tasks for all components
         tasks = [
             asyncio.create_task(self.event_bus.process(), name="event_bus"),
+            asyncio.create_task(self.ds4_hid.run(), name="ds4_hid"),
             asyncio.create_task(self.ps4.run(), name="ps4"),
             asyncio.create_task(self.idle.run(), name="idle"),
             asyncio.create_task(self._render_loop(), name="render"),
@@ -177,6 +184,7 @@ class LightingController:
         """Stop the controller."""
         print("\nShutting down...")
         self._running = False
+        self.ds4_hid.stop()
         self.ps4.stop()
         self.osc.stop()
         self.idle.stop()

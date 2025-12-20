@@ -40,6 +40,15 @@ class FlashModel(BaseModel):
     duration: float = 1.0  # Seconds
 
 
+class ControllerInputModel(BaseModel):
+    input_type: str  # "axis" or "button" or "dpad"
+    axis: int | None = None
+    value: float | None = None
+    button: int | None = None
+    pressed: bool | None = None
+    dpad: list[int] | None = None  # [x, y]
+
+
 class StatusResponse(BaseModel):
     blackout: bool
     selected_mushrooms: list[int]
@@ -403,10 +412,57 @@ async def get_live_state(request: Request) -> dict[str, Any]:
             "id": mushroom.id,
             "name": mushroom.name,
             "scene": scene.name if scene else "Unknown",
+            "selected": mushroom.id in sm._selected,
             "fixtures": fixtures_data,
         })
 
     return {
         "blackout": sm._blackout,
+        "selected_mushrooms": list(sm._selected),
         "mushrooms": mushrooms_data,
     }
+
+
+# === Controller Input Endpoints ===
+
+@router.post("/controller/input")
+async def send_controller_input(request: Request, input_data: ControllerInputModel) -> dict[str, str]:
+    """Send controller input from web UI (gamepad API)."""
+    from events import Event, EventType
+
+    controller = get_controller(request)
+
+    if input_data.input_type == "axis" and input_data.axis is not None:
+        await controller.event_bus.publish(
+            Event(
+                type=EventType.CONTROLLER_AXIS,
+                data={
+                    "axis": input_data.axis,
+                    "value": input_data.value or 0.0,
+                }
+            )
+        )
+    elif input_data.input_type == "button" and input_data.button is not None:
+        await controller.event_bus.publish(
+            Event(
+                type=EventType.CONTROLLER_BUTTON,
+                data={
+                    "button": input_data.button,
+                    "pressed": input_data.pressed or False,
+                }
+            )
+        )
+    elif input_data.input_type == "dpad" and input_data.dpad is not None:
+        await controller.event_bus.publish(
+            Event(
+                type=EventType.CONTROLLER_BUTTON,
+                data={
+                    "dpad": tuple(input_data.dpad),
+                }
+            )
+        )
+
+    # Reset idle timer on any input
+    controller.idle.activity()
+
+    return {"status": "ok"}

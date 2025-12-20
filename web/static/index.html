@@ -200,6 +200,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <template x-for="mushroom in liveState.mushrooms" :key="mushroom.id">
                     <div class="mushroom-visual rounded-2xl p-5 cursor-pointer hover:ring-2 hover:ring-purple-500 transition-all"
+                        :class="mushroom.selected ? 'ring-2 ring-purple-500' : ''"
                         @click="selectedMushroom = mushroom.id">
                         <!-- Mushroom name and scene -->
                         <div class="flex items-center justify-between mb-4">
@@ -239,6 +240,115 @@
                         <div class="mt-3 text-xs text-purple-400 text-center">Click to configure &rarr;</div>
                     </div>
                 </template>
+            </div>
+
+            <!-- Controller Panel -->
+            <div class="bg-gray-800 rounded-lg p-4 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-semibold flex items-center gap-2">
+                        <span>🎮</span>
+                        <span>Controller</span>
+                        <span class="text-xs px-2 py-0.5 rounded-full"
+                            :class="gamepadConnected ? 'bg-green-500/20 text-green-400' : 'bg-gray-600 text-gray-400'"
+                            x-text="gamepadConnected ? 'Connected' : 'No Gamepad'"></span>
+                    </h3>
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm text-gray-400">Selected:</span>
+                        <span class="text-sm font-semibold text-purple-400"
+                            x-text="liveState.selected_mushrooms?.length === liveState.mushrooms.length ? 'All' : liveState.mushrooms.filter(m => m.selected).map(m => m.name).join(', ') || 'None'"></span>
+                    </div>
+                </div>
+
+                <!-- PS4 Button Layout -->
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- Left side: D-pad for selection -->
+                    <div class="bg-gray-700/50 rounded-lg p-4">
+                        <div class="text-xs text-gray-400 mb-3 text-center">Mushroom Selection</div>
+                        <div class="grid grid-cols-3 gap-1 max-w-[140px] mx-auto">
+                            <div></div>
+                            <button @click="sendDpad(0, 1)"
+                                class="bg-gray-600 hover:bg-gray-500 rounded p-2 text-xs text-center transition-colors"
+                                :class="liveState.selected_mushrooms?.length === liveState.mushrooms.length ? 'ring-2 ring-purple-500' : ''">
+                                ▲<br><span class="text-[10px] text-gray-400">All</span>
+                            </button>
+                            <div></div>
+                            <button @click="sendDpad(-1, 0)"
+                                class="bg-gray-600 hover:bg-gray-500 rounded p-2 text-xs text-center transition-colors"
+                                :class="liveState.selected_mushrooms?.includes(0) && liveState.selected_mushrooms?.length === 1 ? 'ring-2 ring-purple-500' : ''">
+                                ◀<br><span class="text-[10px] text-gray-400">M1</span>
+                            </button>
+                            <button @click="sendDpad(0, -1)"
+                                class="bg-gray-600 hover:bg-gray-500 rounded p-2 text-xs text-center transition-colors"
+                                :class="liveState.selected_mushrooms?.includes(1) && liveState.selected_mushrooms?.length === 1 ? 'ring-2 ring-purple-500' : ''">
+                                ▼<br><span class="text-[10px] text-gray-400">M2</span>
+                            </button>
+                            <button @click="sendDpad(1, 0)"
+                                class="bg-gray-600 hover:bg-gray-500 rounded p-2 text-xs text-center transition-colors"
+                                :class="liveState.selected_mushrooms?.includes(2) && liveState.selected_mushrooms?.length === 1 ? 'ring-2 ring-purple-500' : ''">
+                                ▶<br><span class="text-[10px] text-gray-400">M3</span>
+                            </button>
+                            <div></div>
+                        </div>
+                    </div>
+
+                    <!-- Right side: Face buttons for scenes -->
+                    <div class="bg-gray-700/50 rounded-lg p-4">
+                        <div class="text-xs text-gray-400 mb-3 text-center">Scene Selection</div>
+                        <div class="grid grid-cols-3 gap-1 max-w-[140px] mx-auto">
+                            <div></div>
+                            <button @click="sendButton(3, true)"
+                                class="bg-pink-600/50 hover:bg-pink-500/50 rounded p-2 text-xs text-center transition-colors">
+                                △<br><span class="text-[10px]">Pastel</span>
+                            </button>
+                            <div></div>
+                            <button @click="sendButton(2, true)"
+                                class="bg-green-600/50 hover:bg-green-500/50 rounded p-2 text-xs text-center transition-colors">
+                                □<br><span class="text-[10px]">Bio</span>
+                            </button>
+                            <button @click="sendButton(0, true)"
+                                class="bg-blue-600/50 hover:bg-blue-500/50 rounded p-2 text-xs text-center transition-colors">
+                                ✕<br><span class="text-[10px]">Manual</span>
+                            </button>
+                            <button @click="sendButton(1, true)"
+                                class="bg-purple-600/50 hover:bg-purple-500/50 rounded p-2 text-xs text-center transition-colors">
+                                ○<br><span class="text-[10px]">Audio</span>
+                            </button>
+                            <div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analog sticks (when in Manual mode) -->
+                <div class="mt-4 grid grid-cols-2 gap-4" x-show="liveState.mushrooms.some(m => m.selected && m.scene === 'Manual')">
+                    <div class="bg-gray-700/50 rounded-lg p-3">
+                        <div class="text-xs text-gray-400 mb-2 text-center">Left Stick: Hue / Saturation</div>
+                        <div class="flex justify-center gap-4">
+                            <input type="range" min="-1" max="1" step="0.1" x-model.number="virtualStick.lx"
+                                @input="sendAxis(0, virtualStick.lx)"
+                                class="w-20 accent-purple-500">
+                            <input type="range" min="-1" max="1" step="0.1" x-model.number="virtualStick.ly"
+                                @input="sendAxis(1, virtualStick.ly)" orient="vertical"
+                                class="h-16 accent-purple-500" style="writing-mode: vertical-lr; direction: rtl;">
+                        </div>
+                    </div>
+                    <div class="bg-gray-700/50 rounded-lg p-3">
+                        <div class="text-xs text-gray-400 mb-2 text-center">Right Stick: Brightness</div>
+                        <div class="flex justify-center">
+                            <input type="range" min="-1" max="1" step="0.1" x-model.number="virtualStick.ry"
+                                @input="sendAxis(3, virtualStick.ry)" orient="vertical"
+                                class="h-16 accent-blue-500" style="writing-mode: vertical-lr; direction: rtl;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Options button -->
+                <div class="mt-4 flex justify-center">
+                    <button @click="sendButton(9, true)"
+                        class="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded text-sm transition-colors"
+                        :class="liveState.blackout ? 'ring-2 ring-red-500' : ''">
+                        OPTIONS: Toggle Blackout
+                    </button>
+                </div>
             </div>
 
             <!-- Quick stats -->
@@ -441,8 +551,12 @@
                 flashingFixtures: {},
                 discoveryAddress: 1,
                 discoveryChannels: 3,
-                liveState: { blackout: false, mushrooms: [] },
+                liveState: { blackout: false, mushrooms: [], selected_mushrooms: [] },
                 liveInterval: null,
+                gamepadConnected: false,
+                gamepadInterval: null,
+                lastGamepadState: { axes: [], buttons: [] },
+                virtualStick: { lx: 0, ly: 0, ry: 0 },
 
                 async init() {
                     await this.loadData();
@@ -450,6 +564,17 @@
                     setInterval(() => this.refreshStatus(), 2000);
                     // Fast polling for live visualizer (10 FPS)
                     this.liveInterval = setInterval(() => this.refreshLive(), 100);
+                    // Gamepad polling (60 FPS)
+                    this.gamepadInterval = setInterval(() => this.pollGamepad(), 16);
+                    // Gamepad connection events
+                    window.addEventListener('gamepadconnected', (e) => {
+                        this.gamepadConnected = true;
+                        this.showToast(`Gamepad connected: ${e.gamepad.id}`, 'success');
+                    });
+                    window.addEventListener('gamepaddisconnected', () => {
+                        this.gamepadConnected = false;
+                        this.showToast('Gamepad disconnected', 'error');
+                    });
                 },
 
                 async loadData() {
@@ -490,6 +615,76 @@
                     try {
                         const res = await fetch('/api/live');
                         this.liveState = await res.json();
+                    } catch (e) {}
+                },
+
+                // Gamepad API polling
+                pollGamepad() {
+                    const gamepads = navigator.getGamepads();
+                    const gp = gamepads[0];
+                    if (!gp) {
+                        this.gamepadConnected = false;
+                        return;
+                    }
+                    this.gamepadConnected = true;
+
+                    // Check axes (with deadzone)
+                    const deadzone = 0.15;
+                    for (let i = 0; i < gp.axes.length && i < 4; i++) {
+                        let value = gp.axes[i];
+                        if (Math.abs(value) < deadzone) value = 0;
+                        else value = (value - Math.sign(value) * deadzone) / (1 - deadzone);
+
+                        if (this.lastGamepadState.axes[i] !== value) {
+                            this.lastGamepadState.axes[i] = value;
+                            this.sendAxis(i, value);
+                        }
+                    }
+
+                    // Check buttons
+                    for (let i = 0; i < gp.buttons.length; i++) {
+                        const pressed = gp.buttons[i].pressed;
+                        if (this.lastGamepadState.buttons[i] !== pressed) {
+                            this.lastGamepadState.buttons[i] = pressed;
+                            // D-pad on browser gamepad is usually buttons 12-15
+                            if (i >= 12 && i <= 15 && pressed) {
+                                const dpadMap = { 12: [0, 1], 13: [0, -1], 14: [-1, 0], 15: [1, 0] };
+                                this.sendDpad(...dpadMap[i]);
+                            } else {
+                                this.sendButton(i, pressed);
+                            }
+                        }
+                    }
+                },
+
+                // Send controller input to server
+                async sendAxis(axis, value) {
+                    try {
+                        await fetch('/api/controller/input', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ input_type: 'axis', axis, value })
+                        });
+                    } catch (e) {}
+                },
+
+                async sendButton(button, pressed) {
+                    try {
+                        await fetch('/api/controller/input', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ input_type: 'button', button, pressed })
+                        });
+                    } catch (e) {}
+                },
+
+                async sendDpad(x, y) {
+                    try {
+                        await fetch('/api/controller/input', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ input_type: 'dpad', dpad: [x, y] })
+                        });
                     } catch (e) {}
                 },
 
