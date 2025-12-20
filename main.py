@@ -5,8 +5,9 @@ import asyncio
 import signal
 import time
 
-from config import DEFAULT_CONFIG, Config
-from events import EventBus
+from config import Config
+from config_manager import ConfigManager
+from events import EventBus, EventType
 from fixtures.mushroom import Mushroom
 from inputs.ps4 import PS4Controller
 from inputs.osc_server import OSCServer
@@ -18,8 +19,10 @@ from scene_manager import SceneManager
 class LightingController:
     """Main lighting controller orchestrating all components."""
 
-    def __init__(self, config: Config | None = None) -> None:
-        self.config = config or DEFAULT_CONFIG
+    def __init__(self, config_path: str = "config.json") -> None:
+        # Load configuration
+        self.config_manager = ConfigManager(config_path)
+        self.config = self.config_manager.config
         self._running = False
 
         # Create event bus
@@ -42,7 +45,6 @@ class LightingController:
 
         # Track activity for idle handler - subscribe to input events
         activity_handler = lambda e: self.idle.activity()
-        from events import EventType
         for event_type in [
             EventType.CONTROLLER_BUTTON,
             EventType.CONTROLLER_AXIS,
@@ -51,6 +53,20 @@ class LightingController:
             EventType.OSC_BIO,
         ]:
             self.event_bus.subscribe(event_type, activity_handler)
+
+        # Web server reference (set during run)
+        self._web_server = None
+
+        # Flash queue for fixture identification
+        # Each entry: (address, channels, color, end_time)
+        self._flash_queue: list[tuple[int, int, list[int], float]] = []
+
+    def add_flash(self, address: int, channels: int, color: list[int], duration: float) -> None:
+        """Add a flash request to identify a fixture."""
+        end_time = time.time() + duration
+        # Remove any existing flash for same address
+        self._flash_queue = [f for f in self._flash_queue if f[0] != address]
+        self._flash_queue.append((address, channels, color, end_time))
 
     async def _render_loop(self) -> None:
         """Main render loop - updates scenes and sends DMX."""
@@ -72,6 +88,17 @@ class LightingController:
                 for address, values in dmx_data.items():
                     self.artnet.set_channels(address, values)
 
+            # Apply flash overrides for fixture identification
+            now = current_time
+            active_flashes = []
+            for flash in self._flash_queue:
+                address, channels, color, end_time = flash
+                if now < end_time:
+                    # Flash is active - override DMX values
+                    self.artnet.set_channels(address, color[:channels])
+                    active_flashes.append(flash)
+            self._flash_queue = active_flashes
+
             # Send DMX
             self.artnet.send()
 
@@ -79,6 +106,25 @@ class LightingController:
             elapsed = time.time() - current_time
             sleep_time = max(0, frame_time - elapsed)
             await asyncio.sleep(sleep_time)
+
+    async def _run_web_server(self) -> None:
+        """Run the FastAPI web server."""
+        try:
+            import uvicorn
+            from web import create_app
+
+            app = create_app(self)
+            config = uvicorn.Config(
+                app,
+                host="0.0.0.0",
+                port=self.config.web_port,
+                log_level="warning",
+            )
+            self._web_server = uvicorn.Server(config)
+            await self._web_server.serve()
+        except ImportError:
+            print("Warning: FastAPI/uvicorn not installed. Web interface disabled.")
+            print("Install with: pip install fastapi uvicorn")
 
     async def run(self) -> None:
         """Run the lighting controller."""
@@ -88,9 +134,10 @@ class LightingController:
         print(f"Mushrooms: {len(self.mushrooms)}")
         print(f"Art-Net: {self.config.artnet_ip} universe {self.config.artnet_universe}")
         print(f"OSC port: {self.config.osc_port}")
+        print(f"Web UI: http://localhost:{self.config.web_port}")
         print(f"DMX FPS: {self.config.dmx_fps}")
         print("=" * 50)
-        print("\nControls:")
+        print("\nPS4 Controls:")
         print("  D-pad Up: Select all mushrooms")
         print("  D-pad Left/Down/Right: Select individual mushroom")
         print("  Triangle: Pastel Fade scene")
@@ -116,6 +163,7 @@ class LightingController:
             asyncio.create_task(self.ps4.run(), name="ps4"),
             asyncio.create_task(self.idle.run(), name="idle"),
             asyncio.create_task(self._render_loop(), name="render"),
+            asyncio.create_task(self._run_web_server(), name="web"),
         ]
 
         print("\nRunning... Press Ctrl+C to exit\n")
@@ -134,6 +182,8 @@ class LightingController:
         self.idle.stop()
         self.artnet.blackout()
         self.artnet.stop()
+        if self._web_server:
+            self._web_server.should_exit = True
 
 
 async def main() -> None:
