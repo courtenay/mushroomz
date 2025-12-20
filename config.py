@@ -83,10 +83,44 @@ class SceneParams:
 
 
 @dataclass
+class DMXOutputConfig:
+    """Configuration for DMX output."""
+    # Output type: "artnet", "opendmx", "dmxpro", "multi"
+    output_type: str = "artnet"
+
+    # Art-Net settings
+    artnet_ip: str = "169.254.219.50"
+    artnet_universe: int = 0
+
+    # USB-DMX settings
+    usb_port: str = ""  # Auto-detect if empty
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "output_type": self.output_type,
+            "artnet_ip": self.artnet_ip,
+            "artnet_universe": self.artnet_universe,
+            "usb_port": self.usb_port,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DMXOutputConfig":
+        return cls(
+            output_type=data.get("output_type", "artnet"),
+            artnet_ip=data.get("artnet_ip", "169.254.219.50"),
+            artnet_universe=data.get("artnet_universe", 0),
+            usb_port=data.get("usb_port", ""),
+        )
+
+
+@dataclass
 class Config:
     """Main configuration."""
-    # Art-Net settings
-    artnet_ip: str = "169.254.219.50"  # DMX-USB controller
+    # DMX output settings (new unified config)
+    dmx_output: DMXOutputConfig = field(default_factory=DMXOutputConfig)
+
+    # Legacy Art-Net settings (for backwards compatibility)
+    artnet_ip: str = "169.254.219.50"
     artnet_universe: int = 0
     dmx_fps: int = 40  # DMX refresh rate
 
@@ -107,6 +141,7 @@ class Config:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "dmx_output": self.dmx_output.to_dict(),
             "artnet_ip": self.artnet_ip,
             "artnet_universe": self.artnet_universe,
             "dmx_fps": self.dmx_fps,
@@ -119,7 +154,19 @@ class Config:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":
+        # Handle DMX output config (with backwards compatibility)
+        if "dmx_output" in data:
+            dmx_output = DMXOutputConfig.from_dict(data["dmx_output"])
+        else:
+            # Legacy config - build from artnet settings
+            dmx_output = DMXOutputConfig(
+                output_type="artnet",
+                artnet_ip=data.get("artnet_ip", "169.254.219.50"),
+                artnet_universe=data.get("artnet_universe", 0),
+            )
+
         return cls(
+            dmx_output=dmx_output,
             artnet_ip=data.get("artnet_ip", "169.254.219.50"),
             artnet_universe=data.get("artnet_universe", 0),
             dmx_fps=data.get("dmx_fps", 40),

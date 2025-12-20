@@ -5,7 +5,7 @@ import asyncio
 import signal
 import time
 
-from config import Config
+from config import Config, DMXOutputConfig
 from config_manager import ConfigManager
 from events import EventBus, EventType
 from fixtures.mushroom import Mushroom
@@ -13,8 +13,51 @@ from inputs.ps4 import PS4Controller
 from inputs.ds4_hid import DS4HIDController
 from inputs.osc_server import OSCServer
 from inputs.idle import IdleHandler
-from output.artnet import ArtNetOutput
+from output import DMXOutput, ArtNetOutput, OpenDMXOutput, DMXUSBProOutput, MultiOutput, auto_detect_usb_dmx
 from scene_manager import SceneManager
+
+
+def create_dmx_output(config: DMXOutputConfig) -> DMXOutput:
+    """Factory function to create DMX output based on config."""
+    output_type = config.output_type.lower()
+
+    if output_type == "artnet":
+        return ArtNetOutput(ip=config.artnet_ip, universe=config.artnet_universe)
+
+    elif output_type == "opendmx":
+        if config.usb_port:
+            return OpenDMXOutput(port=config.usb_port)
+        else:
+            # Try auto-detect
+            output = auto_detect_usb_dmx()
+            if output:
+                return output
+            print("Warning: No USB-DMX adapter found, falling back to Art-Net")
+            return ArtNetOutput(ip=config.artnet_ip, universe=config.artnet_universe)
+
+    elif output_type == "dmxpro":
+        if config.usb_port:
+            return DMXUSBProOutput(port=config.usb_port)
+        else:
+            print("Warning: USB port not specified for DMX USB Pro")
+            return ArtNetOutput(ip=config.artnet_ip, universe=config.artnet_universe)
+
+    elif output_type == "multi":
+        # Send to both Art-Net and USB-DMX
+        outputs: list[DMXOutput] = [
+            ArtNetOutput(ip=config.artnet_ip, universe=config.artnet_universe)
+        ]
+        if config.usb_port:
+            outputs.append(OpenDMXOutput(port=config.usb_port))
+        else:
+            usb_output = auto_detect_usb_dmx()
+            if usb_output:
+                outputs.append(usb_output)
+        return MultiOutput(outputs)
+
+    else:
+        print(f"Warning: Unknown output type '{output_type}', using Art-Net")
+        return ArtNetOutput(ip=config.artnet_ip, universe=config.artnet_universe)
 
 
 class LightingController:
@@ -34,11 +77,8 @@ class LightingController:
             Mushroom(mc, i) for i, mc in enumerate(self.config.mushrooms)
         ]
 
-        # Create components
-        self.artnet = ArtNetOutput(
-            ip=self.config.artnet_ip,
-            universe=self.config.artnet_universe
-        )
+        # Create DMX output based on config
+        self.dmx_output = create_dmx_output(self.config.dmx_output)
         # Try DS4 HID first (has gyro support), fall back to pygame
         self.ds4_hid = DS4HIDController(self.event_bus)
         self.ps4 = PS4Controller(self.event_bus)
@@ -91,7 +131,7 @@ class LightingController:
             for mushroom in self.mushrooms:
                 dmx_data = mushroom.get_dmx_data()
                 for address, values in dmx_data.items():
-                    self.artnet.set_channels(address, values)
+                    self.dmx_output.set_channels(address, values)
 
             # Apply flash overrides for fixture identification
             now = current_time
@@ -100,12 +140,12 @@ class LightingController:
                 address, channels, color, end_time = flash
                 if now < end_time:
                     # Flash is active - override DMX values
-                    self.artnet.set_channels(address, color[:channels])
+                    self.dmx_output.set_channels(address, color[:channels])
                     active_flashes.append(flash)
             self._flash_queue = active_flashes
 
             # Send DMX
-            self.artnet.send()
+            self.dmx_output.send()
 
             # Sleep to maintain frame rate
             elapsed = time.time() - current_time
@@ -137,7 +177,11 @@ class LightingController:
         print("Mushroom Lighting Controller")
         print("=" * 50)
         print(f"Mushrooms: {len(self.mushrooms)}")
-        print(f"Art-Net: {self.config.artnet_ip} universe {self.config.artnet_universe}")
+        print(f"DMX Output: {self.config.dmx_output.output_type}")
+        if self.config.dmx_output.output_type == "artnet":
+            print(f"  Art-Net: {self.config.dmx_output.artnet_ip} universe {self.config.dmx_output.artnet_universe}")
+        elif self.config.dmx_output.usb_port:
+            print(f"  USB Port: {self.config.dmx_output.usb_port}")
         print(f"OSC port: {self.config.osc_port}")
         print(f"Web UI: http://localhost:{self.config.web_port}")
         print(f"DMX FPS: {self.config.dmx_fps}")
@@ -157,8 +201,8 @@ class LightingController:
 
         self._running = True
 
-        # Start Art-Net
-        self.artnet.start()
+        # Start DMX output
+        self.dmx_output.start()
 
         # Start OSC server
         await self.osc.start()
@@ -188,8 +232,8 @@ class LightingController:
         self.ps4.stop()
         self.osc.stop()
         self.idle.stop()
-        self.artnet.blackout()
-        self.artnet.stop()
+        self.dmx_output.blackout()
+        self.dmx_output.stop()
         if self._web_server:
             self._web_server.should_exit = True
 
