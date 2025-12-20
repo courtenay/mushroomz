@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from events import EventBus, Event, EventType
-from scenes.manual import is_manual_active
+from scenes.state import is_manual_active
 
 
 class OSCServer:

@@ -84,8 +84,8 @@
       "phase_offset": 0.6
     },
     "audio_pulse": {
-      "base_hue": 0,
-      "decay_rate": 4.5
+      "base_hue": 220,
+      "decay_rate": 2.5
     },
     "bio_glow": {
       "low_color": [

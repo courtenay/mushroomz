@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from .base import Scene
+from .state import is_manual_active, set_manual_active
 from fixtures.mushroom import Mushroom
 from fixtures.rgb_par import Color
 from events import Event, EventType
@@ -13,13 +14,6 @@ from inputs.ps4 import PS4Axis
 # Gyro sensitivity multipliers
 GYRO_HUE_SENSITIVITY = 200.0  # degrees per second per unit gyro
 GYRO_SAT_SENSITIVITY = 0.5    # saturation change per second per unit gyro
-
-# Shared flag to suppress other displays when manual is active
-_manual_active = False
-
-
-def is_manual_active() -> bool:
-    return _manual_active
 
 
 class ManualScene(Scene):
@@ -48,14 +42,12 @@ class ManualScene(Scene):
         self._last_display = 0.0
 
     def activate(self) -> None:
-        global _manual_active
         super().activate()
-        _manual_active = True
+        set_manual_active(True)
 
     def deactivate(self) -> None:
-        global _manual_active
         super().deactivate()
-        _manual_active = False
+        set_manual_active(False)
         # Clear the line when leaving manual mode
         sys.stdout.write("\r" + " " * 80 + "\r")
         sys.stdout.flush()
