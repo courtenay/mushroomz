@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from events import EventBus, Event, EventType
+from scenes.manual import is_manual_active
 
 
 class OSCServer:
@@ -28,6 +29,10 @@ class OSCServer:
 
     def _update_display(self) -> None:
         """Update the terminal status line."""
+        # Skip if manual mode is showing its own display
+        if is_manual_active():
+            return
+
         now = time.time()
         if now - self._last_display < 0.05:  # 20fps max
             return

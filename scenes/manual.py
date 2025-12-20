@@ -1,10 +1,20 @@
 """Manual control scene - direct PS4 controller manipulation."""
 
+import sys
+import time
+
 from .base import Scene
 from fixtures.mushroom import Mushroom
 from fixtures.rgb_par import Color
 from events import Event, EventType
 from inputs.ps4 import PS4Axis
+
+# Shared flag to suppress other displays when manual is active
+_manual_active = False
+
+
+def is_manual_active() -> bool:
+    return _manual_active
 
 
 class ManualScene(Scene):
@@ -24,9 +34,56 @@ class ManualScene(Scene):
         self._right_x = 0.0
         self._right_y = 0.0
 
+        # Display rate limiting
+        self._last_display = 0.0
+
     def activate(self) -> None:
+        global _manual_active
         super().activate()
-        # Keep current values on activation
+        _manual_active = True
+
+    def deactivate(self) -> None:
+        global _manual_active
+        super().deactivate()
+        _manual_active = False
+        # Clear the line when leaving manual mode
+        sys.stdout.write("\r" + " " * 80 + "\r")
+        sys.stdout.flush()
+
+    def _update_display(self) -> None:
+        """Update the terminal status line with stick position."""
+        now = time.time()
+        if now - self._last_display < 0.05:  # 20fps max
+            return
+        self._last_display = now
+
+        # Create position indicators (-1 to 1 mapped to bar)
+        bar_len = 9
+        mid = bar_len // 2
+
+        def stick_bar(val: float) -> str:
+            pos = int((val + 1) / 2 * (bar_len - 1))
+            bar = ["-"] * bar_len
+            bar[mid] = "|"
+            bar[pos] = "●"
+            return "".join(bar)
+
+        # Color codes
+        reset = "\033[0m"
+        green = "\033[32m"
+        blue = "\033[34m"
+        yellow = "\033[33m"
+
+        status = (
+            f"\r{green}🎮{reset} "
+            f"LX[{stick_bar(self._left_x)}] "
+            f"LY[{stick_bar(self._left_y)}] "
+            f"{blue}RY[{stick_bar(self._right_y)}]{reset} "
+            f"{yellow}H:{self._hue:3.0f}° S:{self._saturation:.0%} B:{self._brightness:.0%}{reset}"
+            + " " * 20  # Padding to overwrite audio display
+        )
+        sys.stdout.write(status)
+        sys.stdout.flush()
 
     def update(self, mushroom: Mushroom, dt: float) -> None:
         # Left stick controls hue and saturation
@@ -44,6 +101,8 @@ class ManualScene(Scene):
         color = Color.from_hsv(self._hue, self._saturation, self._brightness)
         mushroom.set_target(color)
         mushroom.update(dt, smoothing=0.5)
+
+        self._update_display()
 
     def handle_event(self, event: Event, mushroom: Mushroom) -> None:
         if event.type == EventType.CONTROLLER_AXIS:
