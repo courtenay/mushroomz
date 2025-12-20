@@ -37,4 +37,9 @@ class ArtNetOutput(DMXOutput):
     def send(self) -> None:
         """Send the DMX data."""
         if self._artnet:
-            self._artnet.set(self._dmx_data)
+            try:
+                self._artnet.set(self._dmx_data)
+            except OSError:
+                # Network error (disconnected, host down, etc.) - silently ignore
+                # The Art-Net node will pick up again when network is restored
+                pass
