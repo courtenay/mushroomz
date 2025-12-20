@@ -14,6 +14,7 @@ from inputs.ds4_hid import DS4HIDController
 from inputs.osc_server import OSCServer
 from inputs.idle import IdleHandler
 from inputs.launchpad import LaunchpadMini
+from inputs.leap_motion import LeapMotionController
 from output import DMXOutput, ArtNetOutput, OpenDMXOutput, DMXUSBProOutput, MultiOutput, auto_detect_usb_dmx
 from scene_manager import SceneManager
 
@@ -84,6 +85,7 @@ class LightingController:
         self.ds4_hid = DS4HIDController(self.event_bus)
         self.ps4 = PS4Controller(self.event_bus)
         self.launchpad = LaunchpadMini(self.event_bus)
+        self.leap_motion = LeapMotionController(self.event_bus)
         self.osc = OSCServer(self.event_bus, self.config.osc_port)
         self.idle = IdleHandler(self.event_bus, self.config.idle_timeout)
         self.scene_manager = SceneManager(
@@ -97,6 +99,7 @@ class LightingController:
             EventType.CONTROLLER_AXIS,
             EventType.CONTROLLER_GYRO,
             EventType.CONTROLLER_ACCEL,
+            EventType.LEAP_HAND,
             EventType.OSC_AUDIO_BEAT,
             EventType.OSC_AUDIO_LEVEL,
             EventType.OSC_BIO,
@@ -222,6 +225,13 @@ class LightingController:
         print("    Col 2: Bio Glow (purple)")
         print("    Col 3: Manual (yellow)")
         print("=" * 50)
+        print("\nLeap Motion Controls:")
+        print("  Palm X: Hue control (left to right)")
+        print("  Palm Y: Brightness (bottom to top)")
+        print("  Palm Z: Saturation (near to far)")
+        print("  Grab: Intensity modifier")
+        print("  Pinch: Fine control")
+        print("=" * 50)
 
         self._running = True
 
@@ -236,6 +246,7 @@ class LightingController:
             asyncio.create_task(self.event_bus.process(), name="event_bus"),
             asyncio.create_task(self._run_controller(), name="controller"),
             asyncio.create_task(self.launchpad.run(), name="launchpad"),
+            asyncio.create_task(self.leap_motion.run(), name="leap_motion"),
             asyncio.create_task(self.idle.run(), name="idle"),
             asyncio.create_task(self._render_loop(), name="render"),
             asyncio.create_task(self._run_web_server(), name="web"),
@@ -255,6 +266,7 @@ class LightingController:
         self.ds4_hid.stop()
         self.ps4.stop()
         self.launchpad.stop()
+        self.leap_motion.stop()
         self.osc.stop()
         self.idle.stop()
         self.dmx_output.blackout()

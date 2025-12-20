@@ -130,3 +130,22 @@ class ManualScene(Scene):
             self._gyro_x = event.data.get("x", 0.0)
             self._gyro_y = event.data.get("y", 0.0)
             self._gyro_z = event.data.get("z", 0.0)
+
+        elif event.type == EventType.LEAP_HAND:
+            # Leap Motion hand tracking - direct mapping
+            # Palm X (-1 to +1): Hue (0-360)
+            palm_x = event.data.get("palm_x", 0.0)
+            self._hue = ((palm_x + 1) / 2) * 360
+
+            # Palm Y (0 to 1): Brightness
+            palm_y = event.data.get("palm_y", 0.5)
+            self._brightness = max(0.1, palm_y)
+
+            # Palm Z (-1 to +1): Saturation (near = low, far = high)
+            palm_z = event.data.get("palm_z", 0.0)
+            self._saturation = (palm_z + 1) / 2
+
+            # Grab strength reduces brightness for dramatic effect
+            grab = event.data.get("grab_strength", 0.0)
+            if grab > 0.5:
+                self._brightness *= (1 - (grab - 0.5) * 1.5)

@@ -14,6 +14,9 @@ class EventType(Enum):
     CONTROLLER_GYRO = auto()  # Gyroscope data (pitch, yaw, roll rates)
     CONTROLLER_ACCEL = auto()  # Accelerometer data (x, y, z)
 
+    # Leap Motion hand tracking events
+    LEAP_HAND = auto()  # Hand position, gestures, grab/pinch strength
+
     # OSC events
     OSC_AUDIO_BEAT = auto()
     OSC_AUDIO_LEVEL = auto()
