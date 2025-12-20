@@ -2,6 +2,7 @@
 
 import sys
 import time
+from typing import Any
 
 from .base import Scene
 from fixtures.mushroom import Mushroom
@@ -26,8 +27,8 @@ class ManualScene(Scene):
 
     name = "Manual"
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, params: dict[str, Any] | None = None) -> None:
+        super().__init__(params)
         self._hue = 0.0
         self._saturation = 1.0
         self._brightness = 0.8

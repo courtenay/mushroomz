@@ -1,6 +1,7 @@
 """Pastel fade scene - gentle color cycling through soft colors."""
 
 import math
+from typing import Any
 
 from .base import Scene
 from fixtures.mushroom import Mushroom
@@ -25,12 +26,20 @@ class PastelFadeScene(Scene):
         (320, 0.35, 0.85), # Soft magenta
     ]
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, params: dict[str, Any] | None = None) -> None:
+        super().__init__(params)
         self._phase: dict[int, float] = {}  # Per-mushroom phase offset
         self._time = 0.0
-        self.cycle_duration = 30.0  # Seconds per full cycle
-        self.phase_offset = 0.25  # Phase offset between mushrooms (fraction of cycle)
+
+    @property
+    def cycle_duration(self) -> float:
+        """Seconds per full color cycle."""
+        return self._params.get("cycle_duration", 30.0)
+
+    @property
+    def phase_offset(self) -> float:
+        """Phase offset between mushrooms (fraction of cycle)."""
+        return self._params.get("phase_offset", 0.25)
 
     def activate(self) -> None:
         super().activate()

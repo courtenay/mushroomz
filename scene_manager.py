@@ -2,6 +2,7 @@
 
 from typing import Type, Any
 
+from config import SceneParams
 from events import EventBus, Event, EventType
 from fixtures.mushroom import Mushroom
 from scenes.base import Scene
@@ -22,6 +23,14 @@ class SceneManager:
         PS4Button.CIRCLE: AudioPulseScene,
         PS4Button.SQUARE: BioGlowScene,
         PS4Button.CROSS: ManualScene,
+    }
+
+    # Scene class to param key mapping
+    SCENE_PARAM_KEYS: dict[Type[Scene], str] = {
+        PastelFadeScene: "pastel_fade",
+        AudioPulseScene: "audio_pulse",
+        BioGlowScene: "bio_glow",
+        ManualScene: "manual",
     }
 
     # Launchpad grid mapping (row 0 = bottom)
@@ -47,10 +56,13 @@ class SceneManager:
         mushrooms: list[Mushroom],
         event_bus: EventBus,
         launchpad: Any | None = None,
+        scene_params: SceneParams | None = None,
     ) -> None:
         self.mushrooms = mushrooms
         self.event_bus = event_bus
         self.launchpad = launchpad
+        # Store reference to scene params - changes via API reflect immediately
+        self._scene_params = scene_params or SceneParams()
 
         # Per-mushroom scene instances
         self._scenes: dict[int, Scene] = {}
@@ -61,7 +73,7 @@ class SceneManager:
 
         # Initialize all mushrooms to pastel fade
         for mushroom in mushrooms:
-            scene = PastelFadeScene()
+            scene = self._create_scene(PastelFadeScene)
             scene.activate()
             self._scenes[mushroom.id] = scene
 
@@ -76,6 +88,14 @@ class SceneManager:
 
         # Initial launchpad LED update
         self._update_launchpad_leds()
+
+    def _create_scene(self, scene_class: Type[Scene]) -> Scene:
+        """Create a scene instance with the appropriate params."""
+        param_key = self.SCENE_PARAM_KEYS.get(scene_class)
+        if param_key:
+            params = getattr(self._scene_params, param_key, {})
+            return scene_class(params)
+        return scene_class()
 
     def _handle_button(self, event: Event) -> None:
         """Handle controller button events."""
@@ -135,7 +155,7 @@ class SceneManager:
                 old_scene = self._scenes.get(mushroom_id)
                 if old_scene:
                     old_scene.deactivate()
-                new_scene = scene_class()
+                new_scene = self._create_scene(scene_class)
                 new_scene.activate()
                 self._scenes[mushroom_id] = new_scene
                 print(f"Mushroom {mushroom_id + 1}: {new_scene.name}")
@@ -203,7 +223,7 @@ class SceneManager:
             old_scene = self._scenes.get(mushroom.id)
             if old_scene:
                 old_scene.deactivate()
-            new_scene = PastelFadeScene()
+            new_scene = self._create_scene(PastelFadeScene)
             new_scene.activate()
             self._scenes[mushroom.id] = new_scene
 
@@ -262,7 +282,7 @@ class SceneManager:
             old_scene = self._scenes.get(mushroom_id)
             if old_scene:
                 old_scene.deactivate()
-            new_scene = scene_class()
+            new_scene = self._create_scene(scene_class)
             new_scene.activate()
             self._scenes[mushroom_id] = new_scene
             print(f"Mushroom {mushroom_id + 1}: {new_scene.name}")
@@ -282,7 +302,7 @@ class SceneManager:
                 old_scene = self._scenes.get(mushroom_id)
                 if old_scene:
                     old_scene.deactivate()
-                new_scene = scene_class()
+                new_scene = self._create_scene(scene_class)
                 new_scene.activate()
                 self._scenes[mushroom_id] = new_scene
                 print(f"Mushroom {mushroom_id + 1}: {new_scene.name}")

@@ -1,5 +1,7 @@
 """Audio pulse scene - reactive to beat and audio levels."""
 
+from typing import Any
+
 from .base import Scene
 from fixtures.mushroom import Mushroom
 from fixtures.rgb_par import Color
@@ -11,15 +13,23 @@ class AudioPulseScene(Scene):
 
     name = "Audio Pulse"
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, params: dict[str, Any] | None = None) -> None:
+        super().__init__(params)
         self._beat_intensity = 0.0
         self._audio_level = 0.0
         self._low = 0.0
         self._mid = 0.0
         self._high = 0.0
-        self._base_hue = 280.0  # Purple base
-        self._decay_rate = 3.0  # How fast the beat effect fades
+
+    @property
+    def base_hue(self) -> float:
+        """Base hue for the scene (0-360)."""
+        return self._params.get("base_hue", 280.0)
+
+    @property
+    def decay_rate(self) -> float:
+        """How fast the beat effect fades."""
+        return self._params.get("decay_rate", 3.0)
 
     def activate(self) -> None:
         super().activate()
@@ -28,7 +38,7 @@ class AudioPulseScene(Scene):
 
     def update(self, mushroom: Mushroom, dt: float) -> None:
         # Decay beat intensity
-        self._beat_intensity = max(0, self._beat_intensity - dt * self._decay_rate)
+        self._beat_intensity = max(0, self._beat_intensity - dt * self.decay_rate)
 
         # Mix base color with beat flash
         base_brightness = 0.3 + self._audio_level * 0.3
@@ -36,7 +46,7 @@ class AudioPulseScene(Scene):
 
         # Shift hue based on frequency content
         hue_shift = self._low * 30 - self._high * 30
-        hue = (self._base_hue + hue_shift) % 360
+        hue = (self.base_hue + hue_shift) % 360
 
         # Higher saturation on beats
         saturation = 0.6 + self._beat_intensity * 0.4

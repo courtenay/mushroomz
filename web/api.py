@@ -242,7 +242,7 @@ async def set_mushroom_scene(
     if scene_id not in scene_map:
         raise HTTPException(status_code=400, detail=f"Unknown scene: {data.scene}")
 
-    # Import and instantiate the scene
+    # Import scene classes
     from scenes import PastelFadeScene, AudioPulseScene, BioGlowScene, ManualScene
     scene_classes = {
         "pastel_fade": PastelFadeScene,
@@ -255,7 +255,8 @@ async def set_mushroom_scene(
     if old_scene:
         old_scene.deactivate()
 
-    new_scene = scene_classes[scene_id]()
+    # Use scene_manager's _create_scene to get proper params
+    new_scene = sm._create_scene(scene_classes[scene_id])
     new_scene.activate()
     sm._scenes[mushroom_id] = new_scene
 
@@ -416,10 +417,42 @@ async def get_live_state(request: Request) -> dict[str, Any]:
             "fixtures": fixtures_data,
         })
 
+    # Get controller state from DS4 HID or PS4 controller
+    controller_state = {
+        "connected": False,
+        "type": None,
+        "axes": [0.0, 0.0, 0.0, 0.0],
+        "gyro": None,
+    }
+
+    if controller.ds4_hid._was_used and controller.ds4_hid._device:
+        controller_state["connected"] = True
+        controller_state["type"] = "DS4 HID"
+        controller_state["axes"] = [
+            controller.ds4_hid._axis_state.get(0, 0.0),
+            controller.ds4_hid._axis_state.get(1, 0.0),
+            controller.ds4_hid._axis_state.get(2, 0.0),
+            controller.ds4_hid._axis_state.get(3, 0.0),
+        ]
+    elif controller.ps4.connected:
+        controller_state["connected"] = True
+        controller_state["type"] = "Gamepad"
+        controller_state["axes"] = [
+            controller.ps4.get_axis(0),
+            controller.ps4.get_axis(1),
+            controller.ps4.get_axis(2),
+            controller.ps4.get_axis(3),
+        ]
+
+    # Launchpad state
+    launchpad_connected = controller.launchpad.connected if controller.launchpad else False
+
     return {
         "blackout": sm._blackout,
         "selected_mushrooms": list(sm._selected),
         "mushrooms": mushrooms_data,
+        "controller": controller_state,
+        "launchpad_connected": launchpad_connected,
     }
 
 

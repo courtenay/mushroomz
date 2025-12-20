@@ -86,7 +86,9 @@ class LightingController:
         self.launchpad = LaunchpadMini(self.event_bus)
         self.osc = OSCServer(self.event_bus, self.config.osc_port)
         self.idle = IdleHandler(self.event_bus, self.config.idle_timeout)
-        self.scene_manager = SceneManager(self.mushrooms, self.event_bus, self.launchpad)
+        self.scene_manager = SceneManager(
+            self.mushrooms, self.event_bus, self.launchpad, self.config.scene_params
+        )
 
         # Track activity for idle handler - subscribe to input events
         activity_handler = lambda e: self.idle.activity()

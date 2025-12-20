@@ -1,6 +1,7 @@
 """Bio glow scene - reactive to plant resistance sensors."""
 
 import math
+from typing import Any
 
 from .base import Scene
 from fixtures.mushroom import Mushroom
@@ -13,15 +14,23 @@ class BioGlowScene(Scene):
 
     name = "Bio Glow"
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, params: dict[str, Any] | None = None) -> None:
+        super().__init__(params)
         self._resistance: dict[int, float] = {}  # Per-mushroom resistance values
         self._smoothed: dict[int, float] = {}    # Smoothed values
         self._time = 0.0
 
-        # Color mapping
-        self._low_color = (120, 0.6, 0.4)   # Deep green (low resistance)
-        self._high_color = (60, 0.8, 0.9)   # Bright yellow (high resistance)
+    @property
+    def low_color(self) -> tuple[float, float, float]:
+        """HSV color for low resistance (default: deep green)."""
+        color = self._params.get("low_color", [120, 0.6, 0.4])
+        return (color[0], color[1], color[2])
+
+    @property
+    def high_color(self) -> tuple[float, float, float]:
+        """HSV color for high resistance (default: bright yellow)."""
+        color = self._params.get("high_color", [60, 0.8, 0.9])
+        return (color[0], color[1], color[2])
 
     def activate(self) -> None:
         super().activate()
@@ -46,8 +55,8 @@ class BioGlowScene(Scene):
         resistance = max(0, min(1, resistance + organic_pulse))
 
         # Interpolate between low and high colors
-        h1, s1, v1 = self._low_color
-        h2, s2, v2 = self._high_color
+        h1, s1, v1 = self.low_color
+        h2, s2, v2 = self.high_color
 
         h = h1 + (h2 - h1) * resistance
         s = s1 + (s2 - s1) * resistance

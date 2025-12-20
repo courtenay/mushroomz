@@ -1,6 +1,7 @@
 """Base scene class."""
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 from events import Event
 from fixtures.mushroom import Mushroom
@@ -11,8 +12,10 @@ class Scene(ABC):
 
     name: str = "Base Scene"
 
-    def __init__(self) -> None:
+    def __init__(self, params: dict[str, Any] | None = None) -> None:
         self._active = False
+        # Store reference to params dict - changes are reflected immediately
+        self._params = params or {}
 
     @property
     def is_active(self) -> bool:

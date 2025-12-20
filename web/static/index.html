@@ -249,13 +249,38 @@
                         <span>🎮</span>
                         <span>Controller</span>
                         <span class="text-xs px-2 py-0.5 rounded-full"
-                            :class="gamepadConnected ? 'bg-green-500/20 text-green-400' : 'bg-gray-600 text-gray-400'"
-                            x-text="gamepadConnected ? 'Connected' : 'No Gamepad'"></span>
+                            :class="liveState.controller?.connected ? 'bg-green-500/20 text-green-400' : 'bg-gray-600 text-gray-400'"
+                            x-text="liveState.controller?.connected ? (liveState.controller.type || 'Connected') : 'Disconnected'"></span>
+                        <template x-if="liveState.launchpad_connected">
+                            <span class="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400">Launchpad</span>
+                        </template>
                     </h3>
                     <div class="flex items-center gap-2">
                         <span class="text-sm text-gray-400">Selected:</span>
                         <span class="text-sm font-semibold text-purple-400"
                             x-text="liveState.selected_mushrooms?.length === liveState.mushrooms.length ? 'All' : liveState.mushrooms.filter(m => m.selected).map(m => m.name).join(', ') || 'None'"></span>
+                    </div>
+                </div>
+
+                <!-- Live Stick Display (when backend controller connected) -->
+                <div x-show="liveState.controller?.connected" class="mb-4 flex justify-center gap-8">
+                    <!-- Left Stick -->
+                    <div class="text-center">
+                        <div class="text-xs text-gray-400 mb-1">Left Stick</div>
+                        <div class="relative w-16 h-16 bg-gray-700 rounded-full border-2 border-gray-600">
+                            <div class="absolute w-4 h-4 bg-purple-500 rounded-full transform -translate-x-1/2 -translate-y-1/2 transition-all duration-75"
+                                :style="`left: ${50 + (liveState.controller?.axes?.[0] || 0) * 40}%; top: ${50 + (liveState.controller?.axes?.[1] || 0) * 40}%`">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Right Stick -->
+                    <div class="text-center">
+                        <div class="text-xs text-gray-400 mb-1">Right Stick</div>
+                        <div class="relative w-16 h-16 bg-gray-700 rounded-full border-2 border-gray-600">
+                            <div class="absolute w-4 h-4 bg-blue-500 rounded-full transform -translate-x-1/2 -translate-y-1/2 transition-all duration-75"
+                                :style="`left: ${50 + (liveState.controller?.axes?.[2] || 0) * 40}%; top: ${50 + (liveState.controller?.axes?.[3] || 0) * 40}%`">
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -403,84 +428,154 @@
         <div x-show="currentTab === 'Scenes' && selectedMushroom === null" x-cloak>
             <div class="space-y-6">
                 <!-- Pastel Fade -->
-                <div class="bg-gray-800 rounded-lg p-4">
-                    <h3 class="font-semibold text-lg mb-4 text-pink-400">Pastel Fade</h3>
-                    <div class="grid grid-cols-2 gap-4">
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h3 class="font-semibold text-xl mb-2 text-pink-400">Pastel Fade</h3>
+                    <p class="text-sm text-gray-400 mb-4">Gentle cycling through the color spectrum</p>
+
+                    <!-- Full spectrum preview -->
+                    <div class="mb-6">
+                        <div class="h-12 rounded-lg" style="background: linear-gradient(to right, hsl(0,70%,70%), hsl(60,70%,70%), hsl(120,70%,70%), hsl(180,70%,70%), hsl(240,70%,70%), hsl(300,70%,70%), hsl(360,70%,70%))"></div>
+                        <div class="text-xs text-gray-500 mt-1 text-center">Full color cycle preview (pastel tones)</div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-6">
                         <div>
-                            <label class="text-sm text-gray-400">Cycle Duration (seconds)</label>
-                            <input type="number" x-model.number="sceneParams.pastel_fade.cycle_duration"
-                                @change="updateSceneParams('pastel_fade')"
-                                class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mt-1"
-                                min="5" max="120" step="1">
+                            <label class="text-sm text-gray-400">Cycle Duration</label>
+                            <div class="flex items-center gap-3 mt-2">
+                                <input type="range" x-model.number="sceneParams.pastel_fade.cycle_duration"
+                                    @input="updateSceneParams('pastel_fade')"
+                                    class="flex-1 accent-pink-500" min="5" max="120" step="1">
+                                <span class="text-lg font-mono w-16 text-right" x-text="sceneParams.pastel_fade.cycle_duration + 's'"></span>
+                            </div>
                         </div>
                         <div>
-                            <label class="text-sm text-gray-400">Phase Offset</label>
-                            <input type="number" x-model.number="sceneParams.pastel_fade.phase_offset"
-                                @change="updateSceneParams('pastel_fade')"
-                                class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mt-1"
-                                min="0" max="1" step="0.05">
+                            <label class="text-sm text-gray-400">Fixture Phase Offset</label>
+                            <div class="flex items-center gap-3 mt-2">
+                                <input type="range" x-model.number="sceneParams.pastel_fade.phase_offset"
+                                    @input="updateSceneParams('pastel_fade')"
+                                    class="flex-1 accent-pink-500" min="0" max="1" step="0.05">
+                                <span class="text-lg font-mono w-16 text-right" x-text="Math.round(sceneParams.pastel_fade.phase_offset * 100) + '%'"></span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Audio Pulse -->
-                <div class="bg-gray-800 rounded-lg p-4">
-                    <h3 class="font-semibold text-lg mb-4 text-purple-400">Audio Pulse</h3>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="text-sm text-gray-400">Base Hue (0-360)</label>
-                            <input type="number" x-model.number="sceneParams.audio_pulse.base_hue"
-                                @change="updateSceneParams('audio_pulse')"
-                                class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mt-1"
-                                min="0" max="360" step="10">
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h3 class="font-semibold text-xl mb-2 text-purple-400">Audio Pulse</h3>
+                    <p class="text-sm text-gray-400 mb-4">Beat-reactive lighting with customizable base color</p>
+
+                    <!-- Hue picker with preview -->
+                    <div class="mb-6">
+                        <label class="text-sm text-gray-400">Base Color</label>
+                        <div class="mt-2 flex items-center gap-4">
+                            <div class="flex-1">
+                                <div class="h-8 rounded-lg mb-2" style="background: linear-gradient(to right, hsl(0,80%,50%), hsl(60,80%,50%), hsl(120,80%,50%), hsl(180,80%,50%), hsl(240,80%,50%), hsl(300,80%,50%), hsl(360,80%,50%))"></div>
+                                <input type="range" x-model.number="sceneParams.audio_pulse.base_hue"
+                                    @input="updateSceneParams('audio_pulse')"
+                                    class="w-full accent-purple-500" min="0" max="360" step="5">
+                            </div>
+                            <div class="w-20 h-20 rounded-xl border-4 border-gray-600 shadow-lg"
+                                :style="`background-color: hsl(${sceneParams.audio_pulse.base_hue}, 80%, 50%); box-shadow: 0 0 30px hsla(${sceneParams.audio_pulse.base_hue}, 80%, 50%, 0.5)`">
+                            </div>
                         </div>
-                        <div>
-                            <label class="text-sm text-gray-400">Decay Rate</label>
-                            <input type="number" x-model.number="sceneParams.audio_pulse.decay_rate"
-                                @change="updateSceneParams('audio_pulse')"
-                                class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mt-1"
-                                min="0.5" max="10" step="0.5">
+                    </div>
+
+                    <div>
+                        <label class="text-sm text-gray-400">Decay Rate (how quickly pulses fade)</label>
+                        <div class="flex items-center gap-3 mt-2">
+                            <span class="text-xs text-gray-500">Slow</span>
+                            <input type="range" x-model.number="sceneParams.audio_pulse.decay_rate"
+                                @input="updateSceneParams('audio_pulse')"
+                                class="flex-1 accent-purple-500" min="0.5" max="10" step="0.5">
+                            <span class="text-xs text-gray-500">Fast</span>
+                            <span class="text-lg font-mono w-12 text-right" x-text="sceneParams.audio_pulse.decay_rate"></span>
                         </div>
                     </div>
                 </div>
 
                 <!-- Bio Glow -->
-                <div class="bg-gray-800 rounded-lg p-4">
-                    <h3 class="font-semibold text-lg mb-4 text-green-400">Bio Glow</h3>
-                    <p class="text-sm text-gray-400">Color range based on plant resistance (low to high)</p>
-                    <div class="grid grid-cols-2 gap-4 mt-4">
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h3 class="font-semibold text-xl mb-2 text-green-400">Bio Glow</h3>
+                    <p class="text-sm text-gray-400 mb-4">Color gradient based on plant resistance readings</p>
+
+                    <!-- Gradient preview -->
+                    <div class="mb-6">
+                        <div class="flex items-center gap-4 mb-2">
+                            <span class="text-xs text-gray-500">Low Resistance</span>
+                            <div class="flex-1 h-12 rounded-lg"
+                                :style="`background: linear-gradient(to right, ${hsvToRgbCss(sceneParams.bio_glow.low_color)}, ${hsvToRgbCss(sceneParams.bio_glow.high_color)})`">
+                            </div>
+                            <span class="text-xs text-gray-500">High Resistance</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-8">
+                        <!-- Low Color Picker -->
                         <div>
-                            <label class="text-sm text-gray-400">Low Resistance Color (H, S, V)</label>
-                            <div class="flex gap-2 mt-1">
-                                <input type="number" x-model.number="sceneParams.bio_glow.low_color[0]"
-                                    @change="updateSceneParams('bio_glow')"
-                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1"
-                                    placeholder="H" min="0" max="360">
-                                <input type="number" x-model.number="sceneParams.bio_glow.low_color[1]"
-                                    @change="updateSceneParams('bio_glow')"
-                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1"
-                                    placeholder="S" min="0" max="1" step="0.1">
-                                <input type="number" x-model.number="sceneParams.bio_glow.low_color[2]"
-                                    @change="updateSceneParams('bio_glow')"
-                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1"
-                                    placeholder="V" min="0" max="1" step="0.1">
+                            <label class="text-sm text-gray-400 mb-3 block">Low Resistance Color</label>
+                            <div class="flex items-start gap-4">
+                                <div class="w-24 h-24 rounded-xl border-4 border-gray-600 cursor-pointer relative overflow-hidden"
+                                    :style="`background-color: ${hsvToRgbCss(sceneParams.bio_glow.low_color)}`"
+                                    @click="$refs.lowColorPicker.click()">
+                                    <input type="color" x-ref="lowColorPicker" class="absolute inset-0 opacity-0 cursor-pointer"
+                                        :value="hsvToHex(sceneParams.bio_glow.low_color)"
+                                        @input="sceneParams.bio_glow.low_color = hexToHsv($event.target.value); updateSceneParams('bio_glow')">
+                                </div>
+                                <div class="flex-1 space-y-2">
+                                    <div>
+                                        <label class="text-xs text-gray-500">Hue</label>
+                                        <input type="range" x-model.number="sceneParams.bio_glow.low_color[0]"
+                                            @input="updateSceneParams('bio_glow')"
+                                            class="w-full accent-green-500" min="0" max="360">
+                                    </div>
+                                    <div>
+                                        <label class="text-xs text-gray-500">Saturation</label>
+                                        <input type="range" x-model.number="sceneParams.bio_glow.low_color[1]"
+                                            @input="updateSceneParams('bio_glow')"
+                                            class="w-full accent-green-500" min="0" max="1" step="0.05">
+                                    </div>
+                                    <div>
+                                        <label class="text-xs text-gray-500">Brightness</label>
+                                        <input type="range" x-model.number="sceneParams.bio_glow.low_color[2]"
+                                            @input="updateSceneParams('bio_glow')"
+                                            class="w-full accent-green-500" min="0" max="1" step="0.05">
+                                    </div>
+                                </div>
                             </div>
                         </div>
+
+                        <!-- High Color Picker -->
                         <div>
-                            <label class="text-sm text-gray-400">High Resistance Color (H, S, V)</label>
-                            <div class="flex gap-2 mt-1">
-                                <input type="number" x-model.number="sceneParams.bio_glow.high_color[0]"
-                                    @change="updateSceneParams('bio_glow')"
-                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1"
-                                    placeholder="H" min="0" max="360">
-                                <input type="number" x-model.number="sceneParams.bio_glow.high_color[1]"
-                                    @change="updateSceneParams('bio_glow')"
-                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1"
-                                    placeholder="S" min="0" max="1" step="0.1">
-                                <input type="number" x-model.number="sceneParams.bio_glow.high_color[2]"
-                                    @change="updateSceneParams('bio_glow')"
-                                    class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1"
-                                    placeholder="V" min="0" max="1" step="0.1">
+                            <label class="text-sm text-gray-400 mb-3 block">High Resistance Color</label>
+                            <div class="flex items-start gap-4">
+                                <div class="w-24 h-24 rounded-xl border-4 border-gray-600 cursor-pointer relative overflow-hidden"
+                                    :style="`background-color: ${hsvToRgbCss(sceneParams.bio_glow.high_color)}`"
+                                    @click="$refs.highColorPicker.click()">
+                                    <input type="color" x-ref="highColorPicker" class="absolute inset-0 opacity-0 cursor-pointer"
+                                        :value="hsvToHex(sceneParams.bio_glow.high_color)"
+                                        @input="sceneParams.bio_glow.high_color = hexToHsv($event.target.value); updateSceneParams('bio_glow')">
+                                </div>
+                                <div class="flex-1 space-y-2">
+                                    <div>
+                                        <label class="text-xs text-gray-500">Hue</label>
+                                        <input type="range" x-model.number="sceneParams.bio_glow.high_color[0]"
+                                            @input="updateSceneParams('bio_glow')"
+                                            class="w-full accent-yellow-500" min="0" max="360">
+                                    </div>
+                                    <div>
+                                        <label class="text-xs text-gray-500">Saturation</label>
+                                        <input type="range" x-model.number="sceneParams.bio_glow.high_color[1]"
+                                            @input="updateSceneParams('bio_glow')"
+                                            class="w-full accent-yellow-500" min="0" max="1" step="0.05">
+                                    </div>
+                                    <div>
+                                        <label class="text-xs text-gray-500">Brightness</label>
+                                        <input type="range" x-model.number="sceneParams.bio_glow.high_color[2]"
+                                            @input="updateSceneParams('bio_glow')"
+                                            class="w-full accent-yellow-500" min="0" max="1" step="0.05">
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -551,7 +646,7 @@
                 flashingFixtures: {},
                 discoveryAddress: 1,
                 discoveryChannels: 3,
-                liveState: { blackout: false, mushrooms: [], selected_mushrooms: [] },
+                liveState: { blackout: false, mushrooms: [], selected_mushrooms: [], controller: { connected: false, axes: [0,0,0,0] }, launchpad_connected: false },
                 liveInterval: null,
                 gamepadConnected: false,
                 gamepadInterval: null,
@@ -867,6 +962,68 @@
                 showToast(message, type = 'success') {
                     this.toast = { show: true, message, type };
                     setTimeout(() => this.toast.show = false, 3000);
+                },
+
+                // HSV to RGB CSS string
+                hsvToRgbCss(hsv) {
+                    if (!hsv || hsv.length < 3) return 'rgb(128,128,128)';
+                    const [h, s, v] = hsv;
+                    const rgb = this.hsvToRgb(h, s, v);
+                    return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+                },
+
+                // HSV to Hex for color picker
+                hsvToHex(hsv) {
+                    if (!hsv || hsv.length < 3) return '#808080';
+                    const [h, s, v] = hsv;
+                    const rgb = this.hsvToRgb(h, s, v);
+                    return '#' + rgb.map(c => c.toString(16).padStart(2, '0')).join('');
+                },
+
+                // Hex to HSV from color picker
+                hexToHsv(hex) {
+                    const r = parseInt(hex.slice(1, 3), 16) / 255;
+                    const g = parseInt(hex.slice(3, 5), 16) / 255;
+                    const b = parseInt(hex.slice(5, 7), 16) / 255;
+
+                    const max = Math.max(r, g, b);
+                    const min = Math.min(r, g, b);
+                    const d = max - min;
+
+                    let h = 0;
+                    if (d !== 0) {
+                        if (max === r) h = ((g - b) / d + 6) % 6;
+                        else if (max === g) h = (b - r) / d + 2;
+                        else h = (r - g) / d + 4;
+                        h *= 60;
+                    }
+
+                    const s = max === 0 ? 0 : d / max;
+                    const v = max;
+
+                    return [Math.round(h), Math.round(s * 100) / 100, Math.round(v * 100) / 100];
+                },
+
+                // HSV to RGB array
+                hsvToRgb(h, s, v) {
+                    h = h / 360;
+                    let r, g, b;
+                    const i = Math.floor(h * 6);
+                    const f = h * 6 - i;
+                    const p = v * (1 - s);
+                    const q = v * (1 - f * s);
+                    const t = v * (1 - (1 - f) * s);
+
+                    switch (i % 6) {
+                        case 0: r = v; g = t; b = p; break;
+                        case 1: r = q; g = v; b = p; break;
+                        case 2: r = p; g = v; b = t; break;
+                        case 3: r = p; g = q; b = v; break;
+                        case 4: r = t; g = p; b = v; break;
+                        case 5: r = v; g = p; b = q; break;
+                    }
+
+                    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
                 }
             }
         }
