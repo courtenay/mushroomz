@@ -3,18 +3,37 @@
 import asyncio
 import sys
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from events import EventBus, Event, EventType
 from scenes.state import is_manual_active
+from .base import InputHandler, InputConfig
+from .registry import register
 
 
-class OSCServer:
-    """OSC server for audio and bio sensor input."""
+@dataclass
+class OSCConfig(InputConfig):
+    """Configuration for OSC server."""
+    port: int = 8000
 
-    def __init__(self, event_bus: EventBus, port: int = 8000) -> None:
-        self.event_bus = event_bus
-        self.port = port
+
+@register
+class OSCServer(InputHandler):
+    """OSC server for audio and bio sensor input.
+
+    Receives OSC messages from audio analysis software and plant bio sensors.
+    Publishes events for beat detection, audio levels, and bio sensor data.
+    """
+
+    name = "osc"
+    description = "OSC server for audio analysis and bio sensors"
+    config_class = OSCConfig
+    produces_events = [EventType.OSC_AUDIO_BEAT, EventType.OSC_AUDIO_LEVEL, EventType.OSC_BIO]
+
+    def __init__(self, event_bus: EventBus, config: OSCConfig | None = None) -> None:
+        super().__init__(event_bus, config)
+        self.port = self.config.port if isinstance(self.config, OSCConfig) else 8000
         self._server: Any = None
         self._transport: Any = None
 
@@ -135,8 +154,10 @@ class OSCServer:
         if not address.startswith(("/qlc/", "/live/")):
             pass  # Silently ignore
 
-    async def start(self) -> None:
-        """Start the OSC server."""
+    async def run(self) -> None:
+        """Run the OSC server."""
+        self._running = True
+
         try:
             from pythonosc.dispatcher import Dispatcher
             from pythonosc.osc_server import AsyncIOOSCUDPServer
@@ -157,14 +178,25 @@ class OSCServer:
             )
             self._transport, _ = await self._server.create_serve_endpoint()
             print(f"OSC server started on port {self.port}")
+
+            # Keep running until stopped
+            while self._running:
+                await asyncio.sleep(1.0)
+
         except ImportError:
             print("Warning: python-osc not installed. OSC input disabled.")
 
     def stop(self) -> None:
         """Stop the OSC server."""
+        super().stop()
         if self._transport:
             self._transport.close()
             self._transport = None
         # Clear the status line
         sys.stdout.write("\r" + " " * 60 + "\r")
         sys.stdout.flush()
+
+    # Legacy method for backward compatibility
+    async def start(self) -> None:
+        """Start the OSC server (legacy method, use run() instead)."""
+        await self.run()

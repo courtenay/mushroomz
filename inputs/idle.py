@@ -2,19 +2,39 @@
 
 import asyncio
 import time
+from dataclasses import dataclass
 
 from events import EventBus, Event, EventType
+from .base import InputHandler, InputConfig
+from .registry import register
 
 
-class IdleHandler:
-    """Handles idle timeout and triggers idle mode."""
+@dataclass
+class IdleConfig(InputConfig):
+    """Configuration for idle handler."""
+    timeout: float = 30.0  # Seconds before idle mode triggers
 
-    def __init__(self, event_bus: EventBus, timeout: float = 30.0) -> None:
-        self.event_bus = event_bus
-        self.timeout = timeout
+
+@register
+class IdleHandler(InputHandler):
+    """Handles idle timeout and triggers idle mode.
+
+    Publishes IDLE_TIMEOUT events when no activity is detected
+    for the configured timeout period. Other handlers should call
+    activity() to reset the timer.
+    """
+
+    name = "idle"
+    description = "Idle timeout handler - triggers pastel fade after inactivity"
+    config_class = IdleConfig
+    produces_events = [EventType.IDLE_TIMEOUT]
+    resets_idle = False  # This handler doesn't reset itself
+
+    def __init__(self, event_bus: EventBus, config: IdleConfig | None = None) -> None:
+        super().__init__(event_bus, config)
+        self.timeout = self.config.timeout if isinstance(self.config, IdleConfig) else 30.0
         self._last_activity = time.time()
         self._is_idle = False
-        self._running = False
 
     def activity(self) -> None:
         """Record activity (resets idle timer)."""
@@ -40,4 +60,4 @@ class IdleHandler:
 
     def stop(self) -> None:
         """Stop the idle handler."""
-        self._running = False
+        super().stop()

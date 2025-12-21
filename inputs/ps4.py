@@ -1,10 +1,13 @@
 """PS4 controller input handler with Bluetooth hot-connect support."""
 
 import asyncio
+from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any
 
 from events import EventBus, Event, EventType
+from .base import InputHandler, InputConfig
+from .registry import register
 
 
 # Connection check interval when no controller connected
@@ -44,13 +47,28 @@ class PS4Axis(IntEnum):
     R2 = 5
 
 
-class PS4Controller:
-    """PS4 controller input handler using pygame with Bluetooth hot-connect."""
+@dataclass
+class PS4Config(InputConfig):
+    """Configuration for PS4 controller."""
+    deadzone: float = 0.15
 
-    def __init__(self, event_bus: EventBus) -> None:
-        self.event_bus = event_bus
+
+@register
+class PS4Controller(InputHandler):
+    """PS4 controller input handler using pygame with Bluetooth hot-connect.
+
+    Supports hot-connect/disconnect of controllers via Bluetooth or USB.
+    Publishes button and axis events for scene control.
+    """
+
+    name = "ps4"
+    description = "PS4 DualShock controller via pygame"
+    config_class = PS4Config
+    produces_events = [EventType.CONTROLLER_BUTTON, EventType.CONTROLLER_AXIS]
+
+    def __init__(self, event_bus: EventBus, config: PS4Config | None = None) -> None:
+        super().__init__(event_bus, config)
         self._joystick: Any = None
-        self._running = False
         self._pygame_available = False
         self._connected = False
 
@@ -59,7 +77,7 @@ class PS4Controller:
         self._axis_state: dict[int, float] = {}
 
         # Deadzone for analog sticks
-        self.deadzone = 0.15
+        self.deadzone = self.config.deadzone if isinstance(self.config, PS4Config) else 0.15
 
     def _init_pygame(self) -> bool:
         """Initialize pygame (once). Returns True if pygame is available."""
@@ -261,7 +279,7 @@ class PS4Controller:
 
     def stop(self) -> None:
         """Stop the controller handler."""
-        self._running = False
+        super().stop()
         if self._pygame_available:
             import pygame
             pygame.quit()

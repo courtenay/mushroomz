@@ -9,12 +9,9 @@ from config import Config, DMXOutputConfig
 from config_manager import ConfigManager
 from events import EventBus, EventType
 from fixtures.mushroom import Mushroom
-from inputs.ps4 import PS4Controller
-from inputs.ds4_hid import DS4HIDController
-from inputs.osc_server import OSCServer
-from inputs.idle import IdleHandler
+from inputs import InputManager, list_handlers
 from inputs.launchpad import LaunchpadMini
-from inputs.leap_motion import LeapMotionController
+from inputs.idle import IdleHandler
 from output import DMXOutput, ArtNetOutput, OpenDMXOutput, DMXUSBProOutput, MultiOutput, auto_detect_usb_dmx
 from scene_manager import SceneManager
 
@@ -81,30 +78,34 @@ class LightingController:
 
         # Create DMX output based on config
         self.dmx_output = create_dmx_output(self.config.dmx_output)
-        # Try DS4 HID first (has gyro support), fall back to pygame
-        self.ds4_hid = DS4HIDController(self.event_bus)
-        self.ps4 = PS4Controller(self.event_bus)
-        self.launchpad = LaunchpadMini(self.event_bus)
-        self.leap_motion = LeapMotionController(self.event_bus)
-        self.osc = OSCServer(self.event_bus, self.config.osc_port)
-        self.idle = IdleHandler(self.event_bus, self.config.idle_timeout)
+
+        # Create input manager with config
+        # Convert InputsConfig to dict for InputManager
+        inputs_config = self.config.inputs.to_dict()
+        # Migrate legacy osc_port and idle_timeout if not in inputs config
+        if "port" not in inputs_config.get("osc", {}):
+            inputs_config.setdefault("osc", {})["port"] = self.config.osc_port
+        if "timeout" not in inputs_config.get("idle", {}):
+            inputs_config.setdefault("idle", {})["timeout"] = self.config.idle_timeout
+
+        self.input_manager = InputManager(self.event_bus, inputs_config)
+        loaded = self.input_manager.load_enabled_handlers()
+        print(f"Loaded input handlers: {', '.join(loaded)}")
+
+        # Get special handlers for wiring
+        self.launchpad = self.input_manager.get_handler("launchpad")
+        self.idle = self.input_manager.get_handler("idle")
+
+        # Create scene manager (needs launchpad for LED feedback)
         self.scene_manager = SceneManager(
             self.mushrooms, self.event_bus, self.launchpad, self.config.scene_params
         )
 
-        # Track activity for idle handler - subscribe to input events
-        activity_handler = lambda e: self.idle.activity()
-        for event_type in [
-            EventType.CONTROLLER_BUTTON,
-            EventType.CONTROLLER_AXIS,
-            EventType.CONTROLLER_GYRO,
-            EventType.CONTROLLER_ACCEL,
-            EventType.LEAP_HAND,
-            EventType.OSC_AUDIO_BEAT,
-            EventType.OSC_AUDIO_LEVEL,
-            EventType.OSC_BIO,
-        ]:
-            self.event_bus.subscribe(event_type, activity_handler)
+        # Wire idle handler to reset on input events
+        if self.idle and isinstance(self.idle, IdleHandler):
+            activity_handler = lambda e: self.idle.activity()
+            for event_type in self.input_manager.get_idle_event_types():
+                self.event_bus.subscribe(event_type, activity_handler)
 
         # Web server reference (set during run)
         self._web_server = None
@@ -159,16 +160,6 @@ class LightingController:
             sleep_time = max(0, frame_time - elapsed)
             await asyncio.sleep(sleep_time)
 
-    async def _run_controller(self) -> None:
-        """Run game controller input - DS4 HID preferred, pygame fallback."""
-        # Try DS4 HID first (has gyro support)
-        # ds4_hid.run() returns immediately if no device found
-        await self.ds4_hid.run()
-
-        # If DS4 HID didn't connect, fall back to pygame
-        if not self.ds4_hid._was_used:
-            await self.ps4.run()
-
     async def _run_web_server(self) -> None:
         """Run the FastAPI web server."""
         try:
@@ -202,6 +193,11 @@ class LightingController:
         print(f"OSC port: {self.config.osc_port}")
         print(f"Web UI: http://localhost:{self.config.web_port}")
         print(f"DMX FPS: {self.config.dmx_fps}")
+        print("=" * 50)
+        print("\nAvailable Input Handlers:")
+        for name, handler_cls in list_handlers().items():
+            status = "enabled" if self.input_manager.get_handler(name) else "disabled"
+            print(f"  {name}: {handler_cls.description} [{status}]")
         print("=" * 50)
         print("\nPS4 Controls:")
         print("  D-pad Up: Select all mushrooms")
@@ -238,18 +234,15 @@ class LightingController:
         # Start DMX output
         self.dmx_output.start()
 
-        # Start OSC server
-        await self.osc.start()
+        # Start all input handlers
+        input_tasks = await self.input_manager.start_all()
 
         # Create tasks for all components
         tasks = [
             asyncio.create_task(self.event_bus.process(), name="event_bus"),
-            asyncio.create_task(self._run_controller(), name="controller"),
-            asyncio.create_task(self.launchpad.run(), name="launchpad"),
-            asyncio.create_task(self.leap_motion.run(), name="leap_motion"),
-            asyncio.create_task(self.idle.run(), name="idle"),
             asyncio.create_task(self._render_loop(), name="render"),
             asyncio.create_task(self._run_web_server(), name="web"),
+            *input_tasks,
         ]
 
         print("\nRunning... Press Ctrl+C to exit\n")
@@ -263,12 +256,7 @@ class LightingController:
         """Stop the controller."""
         print("\nShutting down...")
         self._running = False
-        self.ds4_hid.stop()
-        self.ps4.stop()
-        self.launchpad.stop()
-        self.leap_motion.stop()
-        self.osc.stop()
-        self.idle.stop()
+        self.input_manager.stop_all()
         self.dmx_output.blackout()
         self.dmx_output.stop()
         if self._web_server:

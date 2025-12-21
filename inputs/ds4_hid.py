@@ -2,9 +2,12 @@
 
 import asyncio
 import struct
+from dataclasses import dataclass
 from typing import Any
 
 from events import EventBus, Event, EventType
+from .base import InputHandler, InputConfig
+from .registry import register
 
 
 # DualShock 4 vendor/product IDs
@@ -30,13 +33,35 @@ class DS4Button:
     TOUCHPAD = 17
 
 
-class DS4HIDController:
-    """DualShock 4 controller using raw HID for gyro access."""
+@dataclass
+class DS4HIDConfig(InputConfig):
+    """Configuration for DS4 HID controller."""
+    gyro_scale: float = 1.0 / 1024.0  # Scale to roughly -1 to 1 range
+    accel_scale: float = 1.0 / 8192.0
+    deadzone: float = 0.15
 
-    def __init__(self, event_bus: EventBus) -> None:
-        self.event_bus = event_bus
+
+@register
+class DS4HIDController(InputHandler):
+    """DualShock 4 controller using raw HID for gyro access.
+
+    Provides gyroscope and accelerometer data not available via pygame.
+    Falls back to PS4Controller (pygame) if HID not available.
+    """
+
+    name = "ds4_hid"
+    description = "DualShock 4 via raw HID with gyro/accel support"
+    config_class = DS4HIDConfig
+    produces_events = [
+        EventType.CONTROLLER_BUTTON,
+        EventType.CONTROLLER_AXIS,
+        EventType.CONTROLLER_GYRO,
+        EventType.CONTROLLER_ACCEL,
+    ]
+
+    def __init__(self, event_bus: EventBus, config: DS4HIDConfig | None = None) -> None:
+        super().__init__(event_bus, config)
         self._device: Any = None
-        self._running = False
         self._was_used = False  # Track if we successfully used HID
 
         # State tracking
@@ -44,12 +69,11 @@ class DS4HIDController:
         self._axis_state: dict[int, float] = {}
         self._dpad_state = (0, 0)
 
-        # Calibration for gyro (raw values are quite sensitive)
-        self.gyro_scale = 1.0 / 1024.0  # Scale to roughly -1 to 1 range
-        self.accel_scale = 1.0 / 8192.0
-
-        # Deadzone for analog sticks
-        self.deadzone = 0.15
+        # Calibration for gyro
+        cfg = self.config if isinstance(self.config, DS4HIDConfig) else DS4HIDConfig()
+        self.gyro_scale = cfg.gyro_scale
+        self.accel_scale = cfg.accel_scale
+        self.deadzone = cfg.deadzone
 
     def _find_device(self) -> Any:
         """Find and open DS4 controller."""
@@ -255,7 +279,12 @@ class DS4HIDController:
 
     def stop(self) -> None:
         """Stop the controller handler."""
-        self._running = False
+        super().stop()
         if self._device:
             self._device.close()
             self._device = None
+
+    @property
+    def connected(self) -> bool:
+        """Check if controller is connected via HID."""
+        return self._device is not None

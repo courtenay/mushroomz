@@ -83,6 +83,55 @@ class SceneParams:
 
 
 @dataclass
+class InputsConfig:
+    """Configuration for input handlers.
+
+    Each key is a handler name, value is a dict of handler-specific settings.
+    All handlers are enabled by default. Set {"enabled": false} to disable.
+
+    Example:
+        inputs:
+          osc:
+            port: 8000
+          idle:
+            timeout: 300
+          leap_motion:
+            enabled: false  # Disable this handler
+    """
+    ps4: dict[str, Any] = field(default_factory=dict)
+    ds4_hid: dict[str, Any] = field(default_factory=dict)
+    osc: dict[str, Any] = field(default_factory=dict)
+    launchpad: dict[str, Any] = field(default_factory=dict)
+    leap_motion: dict[str, Any] = field(default_factory=dict)
+    idle: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ps4": self.ps4,
+            "ds4_hid": self.ds4_hid,
+            "osc": self.osc,
+            "launchpad": self.launchpad,
+            "leap_motion": self.leap_motion,
+            "idle": self.idle,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "InputsConfig":
+        return cls(
+            ps4=data.get("ps4", {}),
+            ds4_hid=data.get("ds4_hid", {}),
+            osc=data.get("osc", {}),
+            launchpad=data.get("launchpad", {}),
+            leap_motion=data.get("leap_motion", {}),
+            idle=data.get("idle", {}),
+        )
+
+    def get(self, name: str, default: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Get config for a handler by name."""
+        return getattr(self, name, default or {})
+
+
+@dataclass
 class DMXOutputConfig:
     """Configuration for DMX output."""
     # Output type: "artnet", "opendmx", "dmxpro", "multi"
@@ -139,6 +188,9 @@ class Config:
     # Scene parameters
     scene_params: SceneParams = field(default_factory=SceneParams)
 
+    # Input handler configuration
+    inputs: InputsConfig = field(default_factory=InputsConfig)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "dmx_output": self.dmx_output.to_dict(),
@@ -150,6 +202,7 @@ class Config:
             "web_port": self.web_port,
             "mushrooms": [m.to_dict() for m in self.mushrooms],
             "scene_params": self.scene_params.to_dict(),
+            "inputs": self.inputs.to_dict(),
         }
 
     @classmethod
@@ -165,6 +218,16 @@ class Config:
                 artnet_universe=data.get("artnet_universe", 0),
             )
 
+        # Handle inputs config (with backwards compatibility for osc_port/idle_timeout)
+        if "inputs" in data:
+            inputs = InputsConfig.from_dict(data["inputs"])
+        else:
+            # Migrate legacy osc_port and idle_timeout into inputs config
+            inputs = InputsConfig(
+                osc={"port": data.get("osc_port", 8000)},
+                idle={"timeout": data.get("idle_timeout", 30.0)},
+            )
+
         return cls(
             dmx_output=dmx_output,
             artnet_ip=data.get("artnet_ip", "169.254.219.50"),
@@ -175,6 +238,7 @@ class Config:
             web_port=data.get("web_port", 8080),
             mushrooms=[MushroomConfig.from_dict(m) for m in data.get("mushrooms", [])],
             scene_params=SceneParams.from_dict(data.get("scene_params", {})),
+            inputs=inputs,
         )
 
 

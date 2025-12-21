@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from events import EventBus, Event, EventType
+from .base import InputHandler, InputConfig
+from .registry import register
 
 
 @dataclass
@@ -31,25 +33,39 @@ class HandData:
     velocity_z: float
 
 
-class LeapMotionController:
+@dataclass
+class LeapMotionConfig(InputConfig):
+    """Configuration for Leap Motion controller."""
+    interaction_box_width: float = 250.0  # X range: -125 to +125 mm
+    interaction_box_height: float = 250.0  # Y range: 0 to 250 mm above sensor
+    interaction_box_depth: float = 200.0  # Z range: -100 to +100 mm
+
+
+@register
+class LeapMotionController(InputHandler):
     """Leap Motion hand tracking input handler.
 
     Publishes LEAP_HAND events with normalized hand position and gesture data.
     Supports hot-connect (waits for Leap service to become available).
     """
 
-    # Interaction box normalization (mm from sensor center)
-    INTERACTION_BOX_WIDTH = 250.0  # X range: -125 to +125 mm
-    INTERACTION_BOX_HEIGHT = 250.0  # Y range: 0 to 250 mm above sensor
-    INTERACTION_BOX_DEPTH = 200.0  # Z range: -100 to +100 mm
+    name = "leap_motion"
+    description = "Leap Motion hand tracking sensor"
+    config_class = LeapMotionConfig
+    produces_events = [EventType.LEAP_HAND]
 
-    def __init__(self, event_bus: EventBus) -> None:
-        self.event_bus = event_bus
-        self._running = False
+    def __init__(self, event_bus: EventBus, config: LeapMotionConfig | None = None) -> None:
+        super().__init__(event_bus, config)
         self._connected = False
         self._controller: Any = None
         self._listener: Any = None
         self._sdk_type: str | None = None  # "gemini" or "legacy"
+
+        # Interaction box normalization (from config)
+        cfg = self.config if isinstance(self.config, LeapMotionConfig) else LeapMotionConfig()
+        self.INTERACTION_BOX_WIDTH = cfg.interaction_box_width
+        self.INTERACTION_BOX_HEIGHT = cfg.interaction_box_height
+        self.INTERACTION_BOX_DEPTH = cfg.interaction_box_depth
 
         # Track last hand state for gesture detection
         self._last_hands: dict[str, HandData] = {}
@@ -259,7 +275,7 @@ class LeapMotionController:
 
     def stop(self) -> None:
         """Stop the Leap Motion handler."""
-        self._running = False
+        super().stop()
         if self._controller and self._listener:
             try:
                 self._controller.remove_listener(self._listener)

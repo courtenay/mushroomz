@@ -6,6 +6,8 @@ from enum import IntEnum
 from typing import Any, Callable
 
 from events import EventBus, Event, EventType
+from .base import InputHandler, InputConfig
+from .registry import register
 
 
 # Launchpad Mini note mapping (8x8 grid + top row)
@@ -45,18 +47,40 @@ class PadEvent:
     velocity: int  # 0-127
 
 
-class LaunchpadMini:
-    """Novation Launchpad Mini handler with bidirectional MIDI."""
+@dataclass
+class LaunchpadConfig(InputConfig):
+    """Configuration for Launchpad Mini."""
+    device_names: list[str] | None = None  # Custom device names to search for
+
+    def __post_init__(self) -> None:
+        if self.device_names is None:
+            self.device_names = ["Launchpad Mini", "Launchpad Mini MK3"]
+
+
+@register
+class LaunchpadMini(InputHandler):
+    """Novation Launchpad Mini handler with bidirectional MIDI.
+
+    Supports pad input and LED feedback for scene selection interface.
+    """
+
+    name = "launchpad"
+    description = "Novation Launchpad Mini MIDI controller"
+    config_class = LaunchpadConfig
+    produces_events = [EventType.CONTROLLER_BUTTON]
 
     DEVICE_NAMES = ["Launchpad Mini", "Launchpad Mini MK3"]
 
-    def __init__(self, event_bus: EventBus) -> None:
-        self.event_bus = event_bus
+    def __init__(self, event_bus: EventBus, config: LaunchpadConfig | None = None) -> None:
+        super().__init__(event_bus, config)
         self._inport: Any = None
         self._outport: Any = None
-        self._running = False
         self._connected = False
         self._mido_available = False
+
+        # Use custom device names if provided
+        if isinstance(self.config, LaunchpadConfig) and self.config.device_names:
+            self.DEVICE_NAMES = self.config.device_names
 
         # Pad state tracking (for toggle modes etc)
         self._pad_state: dict[tuple[int, int], bool] = {}
@@ -389,7 +413,7 @@ class LaunchpadMini:
 
     def stop(self) -> None:
         """Stop the Launchpad handler."""
-        self._running = False
+        super().stop()
         if self._connected:
             self.clear_all()
         if self._inport:
