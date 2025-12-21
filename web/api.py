@@ -425,7 +425,7 @@ async def get_live_state(request: Request) -> dict[str, Any]:
         "gyro": None,
     }
 
-    if controller.ds4_hid._was_used and controller.ds4_hid._device:
+    if controller.ds4_hid and controller.ds4_hid._was_used and controller.ds4_hid._device:
         controller_state["connected"] = True
         controller_state["type"] = "DS4 HID"
         controller_state["axes"] = [
@@ -434,7 +434,7 @@ async def get_live_state(request: Request) -> dict[str, Any]:
             controller.ds4_hid._axis_state.get(2, 0.0),
             controller.ds4_hid._axis_state.get(3, 0.0),
         ]
-    elif controller.ps4.connected:
+    elif controller.ps4 and controller.ps4.connected:
         controller_state["connected"] = True
         controller_state["type"] = "Gamepad"
         controller_state["axes"] = [

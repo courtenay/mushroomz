@@ -95,6 +95,8 @@ class LightingController:
         # Get special handlers for wiring
         self.launchpad = self.input_manager.get_handler("launchpad")
         self.idle = self.input_manager.get_handler("idle")
+        self.ds4_hid = self.input_manager.get_handler("ds4_hid")
+        self.ps4 = self.input_manager.get_handler("ps4")
 
         # Create scene manager (needs launchpad for LED feedback)
         self.scene_manager = SceneManager(
