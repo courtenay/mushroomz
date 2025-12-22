@@ -7,15 +7,51 @@ Hand position is normalized to:
 - X: -1 (left) to +1 (right)
 - Y: 0 (bottom) to 1 (top)
 - Z: -1 (near/towards user) to +1 (far/away from user)
+
+Gesture Recognition:
+- Swipe: Fast directional hand movement (left/right/up/down)
+- Push/Pull: Z-axis movement towards/away from sensor
+- Grab: Closing hand into fist (grab_strength transition)
+- Release: Opening hand from fist
+- Tap: Quick downward motion followed by stop
+- Circle: Circular motion detected via velocity direction changes
 """
 
 import asyncio
-from dataclasses import dataclass
+import math
+import time
+from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import Any
+from collections import deque
 
 from events import EventBus, Event, EventType
 from .base import InputHandler, InputConfig
 from .registry import register
+
+
+class GestureType(Enum):
+    """Recognized gesture types."""
+    SWIPE_LEFT = auto()
+    SWIPE_RIGHT = auto()
+    SWIPE_UP = auto()
+    SWIPE_DOWN = auto()
+    PUSH = auto()  # Hand moving away from user
+    PULL = auto()  # Hand moving towards user
+    GRAB = auto()  # Hand closing into fist
+    RELEASE = auto()  # Hand opening from fist
+    TAP = auto()  # Quick downward motion
+    CIRCLE_CW = auto()  # Clockwise circle
+    CIRCLE_CCW = auto()  # Counter-clockwise circle
+
+
+@dataclass
+class Gesture:
+    """A detected gesture."""
+    type: GestureType
+    hand: str  # "left" or "right"
+    strength: float  # 0-1, how confident/strong the gesture was
+    timestamp: float = field(default_factory=time.time)
 
 
 @dataclass
@@ -39,6 +75,254 @@ class LeapMotionConfig(InputConfig):
     interaction_box_width: float = 250.0  # X range: -125 to +125 mm
     interaction_box_height: float = 250.0  # Y range: 0 to 250 mm above sensor
     interaction_box_depth: float = 200.0  # Z range: -100 to +100 mm
+    # Gesture detection thresholds (tuned for reliability over sensitivity)
+    swipe_velocity_threshold: float = 0.7  # Minimum velocity for swipe detection
+    swipe_min_distance: float = 0.35  # Minimum travel distance for swipe
+    push_pull_threshold: float = 0.5  # Z velocity threshold for push/pull
+    push_pull_sustain: float = 0.15  # Seconds of sustained movement for push/pull
+    grab_threshold: float = 0.75  # Grab strength to trigger grab gesture
+    release_threshold: float = 0.25  # Grab strength to trigger release gesture
+    tap_velocity_threshold: float = 0.6  # Downward velocity for tap
+    tap_stop_threshold: float = 0.15  # Velocity must drop below this after tap
+    circle_min_rotations: float = 0.85  # Minimum rotations to detect circle
+    gesture_cooldown: float = 0.5  # Seconds between same gesture type (increased)
+
+
+class GestureDetector:
+    """Detects gestures from hand tracking data over time."""
+
+    def __init__(self, config: LeapMotionConfig) -> None:
+        self.config = config
+        # History of hand positions for pattern detection
+        self._history: dict[str, deque[tuple[float, HandData]]] = {
+            "left": deque(maxlen=30),  # ~0.5 seconds at 60fps
+            "right": deque(maxlen=30),
+        }
+        # Track grab state for edge detection
+        self._grab_state: dict[str, bool] = {"left": False, "right": False}
+        # Track velocity direction for circle detection
+        self._velocity_angles: dict[str, deque[float]] = {
+            "left": deque(maxlen=60),
+            "right": deque(maxlen=60),
+        }
+        # Cooldown tracking
+        self._last_gesture_time: dict[str, dict[GestureType, float]] = {
+            "left": {},
+            "right": {},
+        }
+        # Swipe tracking
+        self._swipe_start: dict[str, tuple[float, float, float, float] | None] = {
+            "left": None,
+            "right": None,
+        }
+        # Push/pull tracking (sustained movement)
+        self._push_pull_start: dict[str, tuple[float, float] | None] = {
+            "left": None,  # (start_time, direction)
+            "right": None,
+        }
+
+    def update(self, hand_data: HandData) -> list[Gesture]:
+        """Process new hand data and return any detected gestures."""
+        now = time.time()
+        hand = hand_data.hand_type
+        gestures: list[Gesture] = []
+
+        # Add to history
+        self._history[hand].append((now, hand_data))
+
+        # Detect grab/release (state transitions)
+        grab_gesture = self._detect_grab_release(hand_data, now)
+        if grab_gesture:
+            gestures.append(grab_gesture)
+
+        # Detect swipes (fast directional movement)
+        swipe_gesture = self._detect_swipe(hand_data, now)
+        if swipe_gesture:
+            gestures.append(swipe_gesture)
+
+        # Detect push/pull (Z-axis movement)
+        push_pull = self._detect_push_pull(hand_data, now)
+        if push_pull:
+            gestures.append(push_pull)
+
+        # Detect tap (quick downward motion)
+        tap_gesture = self._detect_tap(hand_data, now)
+        if tap_gesture:
+            gestures.append(tap_gesture)
+
+        # Detect circle (rotational velocity pattern)
+        circle_gesture = self._detect_circle(hand_data, now)
+        if circle_gesture:
+            gestures.append(circle_gesture)
+
+        return gestures
+
+    def _is_on_cooldown(self, hand: str, gesture_type: GestureType, now: float) -> bool:
+        """Check if gesture is on cooldown."""
+        last_time = self._last_gesture_time[hand].get(gesture_type, 0)
+        return (now - last_time) < self.config.gesture_cooldown
+
+    def _record_gesture(self, hand: str, gesture_type: GestureType, now: float) -> None:
+        """Record gesture time for cooldown."""
+        self._last_gesture_time[hand][gesture_type] = now
+
+    def _detect_grab_release(self, hand_data: HandData, now: float) -> Gesture | None:
+        """Detect grab (closing fist) and release (opening hand) gestures."""
+        hand = hand_data.hand_type
+        grab = hand_data.grab_strength
+        was_grabbed = self._grab_state[hand]
+
+        # Detect grab transition
+        if not was_grabbed and grab >= self.config.grab_threshold:
+            self._grab_state[hand] = True
+            if not self._is_on_cooldown(hand, GestureType.GRAB, now):
+                self._record_gesture(hand, GestureType.GRAB, now)
+                return Gesture(GestureType.GRAB, hand, grab)
+
+        # Detect release transition
+        elif was_grabbed and grab <= self.config.release_threshold:
+            self._grab_state[hand] = False
+            if not self._is_on_cooldown(hand, GestureType.RELEASE, now):
+                self._record_gesture(hand, GestureType.RELEASE, now)
+                return Gesture(GestureType.RELEASE, hand, 1.0 - grab)
+
+        return None
+
+    def _detect_swipe(self, hand_data: HandData, now: float) -> Gesture | None:
+        """Detect swipe gestures (fast directional movement)."""
+        hand = hand_data.hand_type
+        vx, vy = hand_data.velocity_x, hand_data.velocity_y
+        speed = math.sqrt(vx * vx + vy * vy)
+
+        # Start tracking when velocity exceeds threshold
+        if speed >= self.config.swipe_velocity_threshold:
+            if self._swipe_start[hand] is None:
+                self._swipe_start[hand] = (now, hand_data.palm_x, hand_data.palm_y, speed)
+        else:
+            # Check if we had a swipe in progress
+            start = self._swipe_start[hand]
+            if start is not None:
+                start_time, start_x, start_y, _ = start
+                dx = hand_data.palm_x - start_x
+                dy = hand_data.palm_y - start_y
+                distance = math.sqrt(dx * dx + dy * dy)
+
+                self._swipe_start[hand] = None
+
+                if distance >= self.config.swipe_min_distance:
+                    # Determine direction
+                    if abs(dx) > abs(dy):
+                        gesture_type = GestureType.SWIPE_RIGHT if dx > 0 else GestureType.SWIPE_LEFT
+                    else:
+                        gesture_type = GestureType.SWIPE_UP if dy > 0 else GestureType.SWIPE_DOWN
+
+                    if not self._is_on_cooldown(hand, gesture_type, now):
+                        self._record_gesture(hand, gesture_type, now)
+                        return Gesture(gesture_type, hand, min(1.0, distance / 0.5))
+
+        return None
+
+    def _detect_push_pull(self, hand_data: HandData, now: float) -> Gesture | None:
+        """Detect push (away) and pull (towards) gestures with sustained movement."""
+        hand = hand_data.hand_type
+        vz = hand_data.velocity_z
+        threshold = self.config.push_pull_threshold
+        sustain = self.config.push_pull_sustain
+
+        # Check if we have sustained movement in one direction
+        if abs(vz) >= threshold:
+            direction = 1.0 if vz > 0 else -1.0
+            start = self._push_pull_start[hand]
+
+            if start is None:
+                # Start tracking
+                self._push_pull_start[hand] = (now, direction)
+            elif start[1] == direction:
+                # Same direction - check duration
+                duration = now - start[0]
+                if duration >= sustain:
+                    self._push_pull_start[hand] = None
+                    gesture_type = GestureType.PUSH if direction > 0 else GestureType.PULL
+                    if not self._is_on_cooldown(hand, gesture_type, now):
+                        self._record_gesture(hand, gesture_type, now)
+                        return Gesture(gesture_type, hand, min(1.0, abs(vz)))
+            else:
+                # Direction changed - reset
+                self._push_pull_start[hand] = (now, direction)
+        else:
+            # Velocity dropped - reset tracking
+            self._push_pull_start[hand] = None
+
+        return None
+
+    def _detect_tap(self, hand_data: HandData, now: float) -> Gesture | None:
+        """Detect tap gesture (quick downward motion that stops)."""
+        hand = hand_data.hand_type
+        history = self._history[hand]
+
+        if len(history) < 5:
+            return None
+
+        # Look for pattern: fast downward -> slow/stop
+        recent = list(history)[-5:]
+        velocities = [h[1].velocity_y for h in recent]
+
+        # Check if we had fast downward motion followed by stop
+        had_fast_down = any(v < -self.config.tap_velocity_threshold for v in velocities[:-2])
+        now_stopped = abs(velocities[-1]) < self.config.tap_stop_threshold
+
+        if had_fast_down and now_stopped:
+            if not self._is_on_cooldown(hand, GestureType.TAP, now):
+                self._record_gesture(hand, GestureType.TAP, now)
+                return Gesture(GestureType.TAP, hand, 1.0)
+
+        return None
+
+    def _detect_circle(self, hand_data: HandData, now: float) -> Gesture | None:
+        """Detect circular motion via velocity direction tracking."""
+        hand = hand_data.hand_type
+        vx, vy = hand_data.velocity_x, hand_data.velocity_y
+        speed = math.sqrt(vx * vx + vy * vy)
+
+        # Only track when moving
+        if speed > 0.1:
+            angle = math.atan2(vy, vx)
+            self._velocity_angles[hand].append(angle)
+
+        angles = list(self._velocity_angles[hand])
+        if len(angles) < 20:
+            return None
+
+        # Calculate cumulative angle change
+        total_rotation = 0.0
+        for i in range(1, len(angles)):
+            diff = angles[i] - angles[i - 1]
+            # Normalize to -pi to pi
+            while diff > math.pi:
+                diff -= 2 * math.pi
+            while diff < -math.pi:
+                diff += 2 * math.pi
+            total_rotation += diff
+
+        rotations = abs(total_rotation) / (2 * math.pi)
+
+        if rotations >= self.config.circle_min_rotations:
+            self._velocity_angles[hand].clear()
+            gesture_type = GestureType.CIRCLE_CW if total_rotation > 0 else GestureType.CIRCLE_CCW
+            if not self._is_on_cooldown(hand, gesture_type, now):
+                self._record_gesture(hand, gesture_type, now)
+                return Gesture(gesture_type, hand, min(1.0, rotations))
+
+        return None
+
+    def clear(self, hand: str | None = None) -> None:
+        """Clear gesture detection state."""
+        hands = [hand] if hand else ["left", "right"]
+        for h in hands:
+            self._history[h].clear()
+            self._velocity_angles[h].clear()
+            self._swipe_start[h] = None
+            self._push_pull_start[h] = None
 
 
 @register
@@ -46,13 +330,21 @@ class LeapMotionController(InputHandler):
     """Leap Motion hand tracking input handler.
 
     Publishes LEAP_HAND events with normalized hand position and gesture data.
+    Publishes LEAP_GESTURE events when gestures are recognized.
     Supports hot-connect (waits for Leap service to become available).
+
+    Gesture Types:
+    - SWIPE_LEFT/RIGHT/UP/DOWN: Fast directional hand movement
+    - PUSH/PULL: Z-axis movement towards/away from sensor
+    - GRAB/RELEASE: Closing/opening fist
+    - TAP: Quick downward motion
+    - CIRCLE_CW/CCW: Circular motion
     """
 
     name = "leap_motion"
-    description = "Leap Motion hand tracking sensor"
+    description = "Leap Motion hand tracking sensor with gesture recognition"
     config_class = LeapMotionConfig
-    produces_events = [EventType.LEAP_HAND]
+    produces_events = [EventType.LEAP_HAND, EventType.LEAP_GESTURE]
 
     def __init__(self, event_bus: EventBus, config: LeapMotionConfig | None = None) -> None:
         super().__init__(event_bus, config)
@@ -68,6 +360,9 @@ class LeapMotionController(InputHandler):
         self.INTERACTION_BOX_WIDTH = cfg.interaction_box_width
         self.INTERACTION_BOX_HEIGHT = cfg.interaction_box_height
         self.INTERACTION_BOX_DEPTH = cfg.interaction_box_depth
+
+        # Gesture detection
+        self._gesture_detector = GestureDetector(cfg)
 
         # Track last hand state for gesture detection
         self._last_hands: dict[str, HandData] = {}
@@ -210,9 +505,10 @@ class LeapMotionController(InputHandler):
                 print(f"Error processing legacy hand: {e}")
 
     def _publish_hand_event(self, hand_data: HandData) -> None:
-        """Publish hand tracking event."""
+        """Publish hand tracking event and detect gestures."""
         self._last_hands[hand_data.hand_type] = hand_data
 
+        # Publish raw hand data
         self.event_bus.publish_sync(
             Event(
                 type=EventType.LEAP_HAND,
@@ -230,6 +526,22 @@ class LeapMotionController(InputHandler):
                 }
             )
         )
+
+        # Run gesture detection
+        gestures = self._gesture_detector.update(hand_data)
+        for gesture in gestures:
+            print(f"Gesture: {gesture.type.name} ({gesture.hand}) strength={gesture.strength:.2f}")
+            self.event_bus.publish_sync(
+                Event(
+                    type=EventType.LEAP_GESTURE,
+                    data={
+                        "gesture": gesture.type.name,
+                        "hand": gesture.hand,
+                        "strength": gesture.strength,
+                        "timestamp": gesture.timestamp,
+                    }
+                )
+            )
 
     async def run(self) -> None:
         """Run the Leap Motion input loop with hot-connect support."""
@@ -265,6 +577,7 @@ class LeapMotionController(InputHandler):
             print("Leap Motion disconnected. Waiting for reconnection...")
             self._connected = False
             self._last_hands.clear()
+            self._gesture_detector.clear()
 
             # Cleanup Gemini connection
             if self._connection_context:

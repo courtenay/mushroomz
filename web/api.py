@@ -49,6 +49,20 @@ class ControllerInputModel(BaseModel):
     dpad: list[int] | None = None  # [x, y]
 
 
+class LFOSettingsModel(BaseModel):
+    waveform: str | None = None  # OFF, SINE, SQUARE, TRIANGLE
+    target: str | None = None  # HUE, SATURATION, BRIGHTNESS
+    frequency: float | None = None  # Hz
+    depth: float | None = None  # 0-1
+
+
+class OneShotModel(BaseModel):
+    effect_type: str  # "flash", "hue_shift", "pulse"
+    intensity: float = 1.0
+    decay_rate: float = 3.0
+    params: dict[str, Any] = {}
+
+
 class StatusResponse(BaseModel):
     blackout: bool
     selected_mushrooms: list[int]
@@ -453,6 +467,7 @@ async def get_live_state(request: Request) -> dict[str, Any]:
         "mushrooms": mushrooms_data,
         "controller": controller_state,
         "launchpad_connected": launchpad_connected,
+        "modulator": controller.modulator.get_state(),
     }
 
 
@@ -496,6 +511,46 @@ async def send_controller_input(request: Request, input_data: ControllerInputMod
         )
 
     # Reset idle timer on any input
-    controller.idle.activity()
+    if controller.idle:
+        controller.idle.activity()
+
+    return {"status": "ok"}
+
+
+# === Modulator Endpoints ===
+
+@router.get("/modulator")
+async def get_modulator_state(request: Request) -> dict[str, Any]:
+    """Get current modulator state including LFO settings and RGB history."""
+    controller = get_controller(request)
+    return controller.modulator.get_state()
+
+
+@router.put("/modulator/lfo")
+async def update_lfo_settings(request: Request, settings: LFOSettingsModel) -> dict[str, str]:
+    """Update LFO settings."""
+    controller = get_controller(request)
+
+    controller.modulator.set_lfo(
+        waveform=settings.waveform,
+        target=settings.target,
+        frequency=settings.frequency,
+        depth=settings.depth,
+    )
+
+    return {"status": "ok"}
+
+
+@router.post("/modulator/oneshot")
+async def trigger_oneshot_effect(request: Request, effect: OneShotModel) -> dict[str, str]:
+    """Trigger a one-shot effect."""
+    controller = get_controller(request)
+
+    controller.modulator.trigger_oneshot(
+        effect_type=effect.effect_type,
+        intensity=effect.intensity,
+        decay_rate=effect.decay_rate,
+        params=effect.params,
+    )
 
     return {"status": "ok"}

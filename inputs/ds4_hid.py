@@ -172,8 +172,17 @@ class DS4HIDController(InputHandler):
             'touchpad': bool(buttons_raw & (1 << 17)),
         }
 
+        # Parse analog triggers (bytes 8-9 from offset)
+        # These are 0-255 values, convert to -1 to 1 range (matching pygame convention)
+        l2_analog = 0.0
+        r2_analog = 0.0
+        if len(data) >= offset + 10:
+            l2_analog = (data[offset + 8] / 127.5) - 1.0  # 0-255 -> -1 to 1
+            r2_analog = (data[offset + 9] / 127.5) - 1.0
+
         result = {
             'lx': lx, 'ly': ly, 'rx': rx, 'ry': ry,
+            'l2': l2_analog, 'r2': r2_analog,
             'dpad': dpad_xy,
             'buttons': buttons,
         }
@@ -236,9 +245,22 @@ class DS4HIDController(InputHandler):
 
     async def _process_report(self, report: dict[str, Any]) -> None:
         """Process parsed report and emit events."""
-        # Analog sticks
+        # Analog sticks (axes 0-3)
         for i, axis_name in enumerate(['lx', 'ly', 'rx', 'ry']):
             value = self._apply_deadzone(report[axis_name])
+            if self._axis_state.get(i) != value:
+                self._axis_state[i] = value
+                await self.event_bus.publish(
+                    Event(
+                        type=EventType.CONTROLLER_AXIS,
+                        data={'axis': i, 'value': value}
+                    )
+                )
+
+        # Analog triggers (axes 4-5: L2, R2)
+        for i, axis_name in enumerate(['l2', 'r2'], start=4):
+            value = report.get(axis_name, -1.0)
+            # Triggers don't need deadzone - they start at -1 (released)
             if self._axis_state.get(i) != value:
                 self._axis_state[i] = value
                 await self.event_bus.publish(

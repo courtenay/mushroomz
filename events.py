@@ -16,6 +16,7 @@ class EventType(Enum):
 
     # Leap Motion hand tracking events
     LEAP_HAND = auto()  # Hand position, gestures, grab/pinch strength
+    LEAP_GESTURE = auto()  # Recognized gestures (swipe, grab, tap, circle, etc.)
 
     # OSC events
     OSC_AUDIO_BEAT = auto()
