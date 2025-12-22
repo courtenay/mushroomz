@@ -85,6 +85,11 @@ class DS4HIDController(InputHandler):
                     device.open(DS4_VENDOR_ID, product_id)
                     device.set_nonblocking(True)
                     print(f"DS4 connected via HID: {device.get_product_string()}")
+
+                    # Enable full report mode on macOS Bluetooth
+                    # Reading calibration feature reports triggers full mode with gyro
+                    self._enable_full_mode(device)
+
                     return device
                 except OSError:
                     continue
@@ -92,6 +97,22 @@ class DS4HIDController(InputHandler):
         except ImportError:
             print("Warning: hidapi not installed. DS4 HID input disabled.")
             return None
+
+    def _enable_full_mode(self, device: Any) -> None:
+        """Enable full report mode for gyro/accel on Bluetooth.
+
+        On macOS, DS4 starts in simple 10-byte report mode over Bluetooth.
+        Reading calibration feature reports triggers full 78-byte reports
+        with gyro and accelerometer data.
+        """
+        try:
+            # Request calibration data - this triggers full mode
+            device.get_feature_report(0x02, 37)  # Gyro calibration
+            device.get_feature_report(0x05, 41)  # Accelerometer calibration
+            print("DS4 full mode enabled (gyro/accel active)")
+        except Exception as e:
+            # Not critical - may already be in full mode (USB) or not supported
+            print(f"DS4 feature report: {e}")
 
     def _parse_report(self, data: bytes) -> dict[str, Any] | None:
         """Parse DS4 HID report."""
