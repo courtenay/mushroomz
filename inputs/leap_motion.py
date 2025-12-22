@@ -57,7 +57,9 @@ class LeapMotionController(InputHandler):
     def __init__(self, event_bus: EventBus, config: LeapMotionConfig | None = None) -> None:
         super().__init__(event_bus, config)
         self._connected = False
-        self._controller: Any = None
+        self._connection: Any = None  # Gemini SDK connection
+        self._connection_context: Any = None  # Gemini SDK context manager
+        self._controller: Any = None  # Legacy SDK controller
         self._listener: Any = None
         self._sdk_type: str | None = None  # "gemini" or "legacy"
 
@@ -79,12 +81,18 @@ class LeapMotionController(InputHandler):
                 def __init__(self, handler: "LeapMotionController"):
                     self.handler = handler
 
+                def on_connection_event(self, event: Any) -> None:
+                    print("Leap Motion: Connected to service")
+
                 def on_tracking_event(self, event: Any) -> None:
                     self.handler._process_gemini_frame(event)
 
-            self._controller = leap.Controller()
+            self._connection = leap.Connection()
             self._listener = GeminiListener(self)
-            self._controller.add_listener(self._listener)
+            self._connection.add_listener(self._listener)
+            self._connection_context = self._connection.open()
+            self._connection_context.__enter__()
+            self._connection.set_tracking_mode(leap.TrackingMode.Desktop)
             self._sdk_type = "gemini"
             print("Leap Motion initialized (Gemini SDK)")
             return True
@@ -240,17 +248,11 @@ class LeapMotionController(InputHandler):
                     continue
 
             # The SDK callbacks handle frame processing
-            # Just keep the loop alive and check connection
+            # Just keep the loop alive and check connection (legacy only)
             await asyncio.sleep(0.1)
 
-            # Check if still connected (SDK-specific)
-            if self._sdk_type == "gemini":
-                try:
-                    if not self._controller.is_connected:
-                        self._handle_disconnect()
-                except Exception:
-                    self._handle_disconnect()
-            elif self._sdk_type == "legacy":
+            # Check if still connected (legacy SDK only - Gemini uses callbacks)
+            if self._sdk_type == "legacy":
                 try:
                     if not self._controller.is_connected:
                         self._handle_disconnect()
@@ -264,6 +266,16 @@ class LeapMotionController(InputHandler):
             self._connected = False
             self._last_hands.clear()
 
+            # Cleanup Gemini connection
+            if self._connection_context:
+                try:
+                    self._connection_context.__exit__(None, None, None)
+                except Exception:
+                    pass
+            self._connection = None
+            self._connection_context = None
+
+            # Cleanup legacy controller
             if self._controller and self._listener:
                 try:
                     self._controller.remove_listener(self._listener)
@@ -276,6 +288,13 @@ class LeapMotionController(InputHandler):
     def stop(self) -> None:
         """Stop the Leap Motion handler."""
         super().stop()
+        # Cleanup Gemini connection
+        if self._connection_context:
+            try:
+                self._connection_context.__exit__(None, None, None)
+            except Exception:
+                pass
+        # Cleanup legacy controller
         if self._controller and self._listener:
             try:
                 self._controller.remove_listener(self._listener)
